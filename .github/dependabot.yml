@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # cooldown : une version n'est proposée que 14 jours après sa publication (règle du projet, voir CLAUDE.md) ; les
+  # correctifs de sécurité ne sont pas retardés.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-test/
+# État local de la veille (en production il vit sur la branche veille-etat, voir README).
+etat/
+.env
+.env.*
+!.env.example
+*.log

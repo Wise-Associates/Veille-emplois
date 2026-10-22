@@ -1,0 +1,147 @@
+name: Veille quotidienne
+
+on:
+  schedule:
+    # Tous les jours à 5 h UTC (6 h ou 7 h à Paris). GitHub peut retarder le départ de quelques minutes.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      essai:
+        description: "Essai : lire les sources et afficher le récapitulatif dans le journal, sans l'envoyer ni retenir l'état"
+        type: boolean
+        default: false
+
+# Lecture seule par défaut ; chaque job ne reçoit que ce dont il a besoin. Le job qui exécute le code et ses
+# dépendances npm n'a jamais le droit d'écrire dans le dépôt (voir docs/adr/0002).
+permissions:
+  contents: read
+
+# Jamais deux passages en même temps : ils se disputeraient la branche d'état.
+concurrency:
+  group: veille
+  cancel-in-progress: false
+
+env:
+  STATE_BRANCH: veille-etat
+
+jobs:
+  passage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      STATE_FILE: etat/etat.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # --ignore-scripts : aucune dépendance n'a de script d'installation légitime ; on n'en exécute aucun.
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+
+      - name: Récupérer l'état (branche veille-etat)
+        run: |
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH" > /dev/null; then
+            git fetch --depth=1 origin "$STATE_BRANCH"
+            mkdir -p etat
+            # Branche présente sans etat.json : arrêt, plutôt que de repartir de zéro en silence.
+            git show FETCH_HEAD:etat.json > etat/etat.json \
+              || { echo "::error::etat.json absent de la branche $STATE_BRANCH"; exit 1; }
+          else
+            rc=$?
+            # Code 2 : la branche n'existe pas (premier passage). Tout autre code : réseau ou droits, on s'arrête.
+            if [ "$rc" -ne 2 ]; then echo "::error::Branche $STATE_BRANCH illisible (git ls-remote, code $rc)"; exit "$rc"; fi
+            echo "Pas encore de branche $STATE_BRANCH : premier passage, toutes les sources seront initialisées."
+          fi
+
+      - name: Passage de la veille
+        env:
+          ESSAI: ${{ inputs.essai }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: |
+          if [ "$ESSAI" = "true" ]; then npm run veille:essai; else npm run veille; fi
+
+      - name: Transmettre l'état au job d'enregistrement
+        if: ${{ inputs.essai != true }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: etat
+          path: etat/etat.json
+          if-no-files-found: error
+          retention-days: 1
+
+  enregistrer:
+    needs: passage
+    if: ${{ inputs.essai != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Seul job autorisé à écrire : il n'exécute que git, jamais le code du projet ni npm.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Préparer la branche d'état
+        run: |
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH" > /dev/null; then
+            git fetch --depth=1 origin "$STATE_BRANCH"
+            git worktree add etat FETCH_HEAD
+          else
+            rc=$?
+            if [ "$rc" -ne 2 ]; then echo "::error::Branche $STATE_BRANCH illisible (git ls-remote, code $rc)"; exit "$rc"; fi
+            # Branche orpheline (sans historique ni code), forme compatible avec les git sans « worktree add --orphan ».
+            # Les fichiers du code restent dans le dossier mais hors index : seul etat.json est jamais ajouté.
+            git worktree add --detach etat
+            git -C etat checkout --quiet --orphan "$STATE_BRANCH"
+            git -C etat rm -r --quiet --cached .
+          fi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: etat
+          path: etat
+
+      - name: Enregistrer l'état
+        working-directory: etat
+        run: |
+          git add etat.json
+          if git diff --cached --quiet; then
+            echo "État inchangé."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "État de la veille du $(date -u +%F)"
+          git push origin "HEAD:refs/heads/$STATE_BRANCH"
+
+  # Un échec planifié n'est signalé par GitHub qu'à la personne qui a modifié le cron en dernier : un ticket prévient
+  # toutes les personnes qui suivent le dépôt. Un seul ticket ouvert à la fois, complété à chaque nouvel échec.
+  alerte:
+    needs: [passage, enregistrer]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Ouvrir ou compléter le ticket d'incident
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Échec de la veille quotidienne"
+          body="Le passage du $(date -u +%F) a échoué. Cause dans le journal de l'exécution : $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
