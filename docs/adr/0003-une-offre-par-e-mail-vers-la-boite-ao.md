@@ -52,6 +52,6 @@ Le récapitulatif quotidien d'origine (toutes les offres dans un seul e-mail, ti
   annulé par son délai.
 - Un message refusé pour lui-même (code 5xx après DATA : contenu, taille) est sauté et retenté au passage suivant ;
   les autres refus (connexion, identifiants, expéditeur, quota) arrêtent l'envoi. Dans les deux cas : code 3, ticket.
-- Complément du 23/10/2026 (ADR 0007 de MyBestConsultant) : chaque e-mail d'offre porte l'en-tête
+- Complément du 23/10/2026 (ADR 0008 de MyBestConsultant) : chaque e-mail d'offre porte l'en-tête
   `X-Wise-Veille: scraping` (`VEILLE_HEADER`, `src/mail/mailer.ts`) ; la page AO affiche la source « Scraping ». Les
   offres dont la date limite est passée ne sont pas envoyées (et MyBestConsultant les écarte aussi).

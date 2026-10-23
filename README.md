@@ -54,7 +54,7 @@ Un appel d'offres publié à la fois au BOAMP et à TED n'est envoyé qu'une foi
 Dans MyBestConsultant, chaque e-mail d'offre porte l'en-tête `X-Wise-Veille: scraping` : la page AO affiche alors
 « Scraping » dans la colonne « Source » (au lieu de « E-mails AO »), écarte une offre échue, et dédoublonne avec les
 offres reçues par ailleurs (même intitulé, client, ville et contrat sur 60 jours). L'en-tête n'est reconnu que si
-l'expéditeur est d'un domaine de l'organisation (voir l'ADR 0007 de MyBestConsultant).
+l'expéditeur est d'un domaine de l'organisation (voir l'ADR 0008 de MyBestConsultant).
 
 ## Prérequis
 
