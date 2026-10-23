@@ -34,6 +34,10 @@ describe('e-mail d\'une offre (boîte AO)', () => {
     assert.match(email.text, /^Avis officiel : https:\/\//m)
   })
 
+  it('ne donne pas la date de publication, que l\'extraction prendrait pour une date limite', () => {
+    assert.doesNotMatch(renderOfferEmail({ ...job, publishedOn: '2026-10-20' }).text, /20\/10\/2026/)
+  })
+
   it('le dit quand la source ne donne pas de description', () => {
     assert.match(renderOfferEmail({ ...job, description: undefined }).text, /Pas de description dans la source/)
   })

@@ -4,7 +4,7 @@
 // envoyé depuis nos domaines prend pour client celui que cite le texte (ADR 0004 de MyBestConsultant).
 // Rendu pur, testé dans offer-email.spec.ts.
 
-import { frenchDay, frenchDeadline } from '../dates.js'
+import { frenchDeadline } from '../dates.js'
 import type { Listing } from '../listing.js'
 import { organisationName } from '../organisations.js'
 import { escapeHtml, safeUrl, STYLE, type RenderedEmail } from './format.js'
@@ -30,7 +30,8 @@ export function renderOfferEmail(listing: Listing): RenderedEmail {
     ['Client', organisation],
     ...(listing.location ? [['Lieu', listing.location] as [string, string]] : []),
     ...(listing.details.length ? [['Précisions', listing.details.join(' · ')] as [string, string]] : []),
-    ...(listing.publishedOn ? [['Publié le', frenchDay(listing.publishedOn)] as [string, string]] : []),
+    // Pas de date de publication : MyBestConsultant n'en garde pas, et son IA classe une date qui n'est ni un
+    // démarrage ni une date limite d'après son jour de la semaine — elle deviendrait une fausse date limite.
     ...(listing.deadline ? [[kind.deadline, frenchDeadline(listing.deadline)] as [string, string]] : []),
     ['Référence', listing.id],
     [kind.link, url ?? 'lien indisponible'],

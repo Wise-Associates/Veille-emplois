@@ -26,6 +26,8 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
 - Une offre par e-mail vers la boîte AO de MyBestConsultant (ADR 0003) : garder les libellés de
   `src/digest/offer-email.ts` (« Client », « Lieu », « Date limite… »), lus par sa consigne d'extraction. Une offre
   n'est retenue comme envoyée qu'après acceptation par le serveur SMTP (`forgetUnsent`).
+- L'en-tête `X-Wise-Veille: scraping` (`VEILLE_HEADER`) est lu par MyBestConsultant (`src/lib/ao/imap.ts`,
+  `fromVeille`) : ne jamais le renommer sans changer les deux projets.
 - `npm run veille:local` envoie réellement : pour tester, une boîte de test dans `OFFERS_TO`.
 - Les liens d'offres présentés dans l'e-mail doivent pointer vers le site de l'organisme : chaque source vérifie
   l'hôte et lève une erreur sinon (lien d'hameçonnage depuis un site compromis).

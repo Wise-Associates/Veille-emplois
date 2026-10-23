@@ -116,6 +116,18 @@ describe('passage de la veille', () => {
     assert.match(digests[0]?.subject ?? '', /— 1 en attente/)
   })
 
+  it('n\'envoie pas une offre dont la date limite est passée, et ne la relit pas au passage suivant', async () => {
+    // Date limite connue seulement par la page de l'offre (cas de Choisir le service public).
+    const describe = async (listing: Listing) => ({ deadline: listing.id === 'A2' ? '2026-10-21' : '2026-11-30' })
+    const { scan, offers, saved, digests } = await scanWith({ sources: [source('a', [offer('A2'), offer('A3')], { describe })] })
+    const summary = await scan.run()
+    assert.deepEqual(offers.map((o) => o.subject), ["Offre d'emploi — DINUM — Offre fictive A3"])
+    assert.equal(summary.outdated, 1)
+    assert.equal(summary.pending, 0)
+    assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A3'], 'A2 retenue comme traitée')
+    assert.match(digests[0]?.text ?? '', /1 nouvelle offre écartée : date limite déjà passée/)
+  })
+
   it('envoie les appels d\'offres en premier', async () => {
     const { scan, offers } = await scanWith({
       sources: [source('a', [offer('A2')]), source('t', [offer('T1', { kind: 'tender', organisationId: 'insee' })])],

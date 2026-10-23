@@ -32,10 +32,12 @@ Proparco, Expertise France.
 5. Au plus `MAX_OFFER_EMAILS_PER_RUN` offres par passage (200 par défaut), une par seconde, et aucune nouvelle offre
    commencée après 25 minutes de passage ; appels d'offres d'abord. Les autres attendent le passage suivant. **Le premier passage** trouve toutes les offres en ligne (environ 750) :
    elles partent sur plusieurs jours, ou plus vite en relançant le workflow à la main.
-6. Une offre n'est retenue comme envoyée qu'une fois son e-mail accepté par le serveur : si le serveur refuse
+6. Une offre dont la date limite est déjà passée (souvent connue par la page de l'offre) n'est pas envoyée ; elle est
+   retenue comme traitée et comptée dans le récapitulatif.
+7. Une offre n'est retenue comme envoyée qu'une fois son e-mail accepté par le serveur : si le serveur refuse
    (quota, adresse), l'envoi s'arrête et le reste part au passage suivant ; s'il refuse un seul message (contenu),
    celui-ci est sauté, signalé, et retenté au passage suivant.
-7. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`), **même sans nouveauté** (son arrivée prouve que la
+8. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`), **même sans nouveauté** (son arrivée prouve que la
    veille tourne) : offres envoyées, offres en attente, points à vérifier.
 
 Le récapitulatif signale en tête les **points à vérifier** :
@@ -48,6 +50,11 @@ Le récapitulatif signale en tête les **points à vérifier** :
 - avis BOAMP au contenu illisible, offres envoyées sans le détail de leur page, offres AFD dont l'examen est reporté.
 
 Un appel d'offres publié à la fois au BOAMP et à TED n'est envoyé qu'une fois.
+
+Dans MyBestConsultant, chaque e-mail d'offre porte l'en-tête `X-Wise-Veille: scraping` : la page AO affiche alors
+« Scraping » dans la colonne « Source » (au lieu de « E-mails AO »), écarte une offre échue, et dédoublonne avec les
+offres reçues par ailleurs (même intitulé, client, ville et contrat sur 60 jours). L'en-tête n'est reconnu que si
+l'expéditeur est d'un domaine de l'organisation (voir l'ADR 0007 de MyBestConsultant).
 
 ## Prérequis
 

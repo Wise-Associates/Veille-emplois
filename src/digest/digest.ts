@@ -10,6 +10,8 @@ import { escapeHtml, metaParts, plural, safeUrl, STYLE, type RenderedEmail } fro
 export interface DeliverySummary {
   /** Offres envoyées une à une à la boîte AO pendant ce passage. */
   sent: Listing[]
+  /** Nouvelles offres non envoyées car leur date limite était déjà passée. */
+  outdated: number
   /** Nouvelles offres non envoyées (plafond du passage, envoi interrompu) : elles partiront aux passages suivants. */
   pending: number
   /** Nombre maximal d'offres envoyées par passage. */
@@ -71,6 +73,11 @@ function pendingLine(summary: DeliverySummary): string | null {
   )
 }
 
+function outdatedLine(summary: DeliverySummary): string | null {
+  if (!summary.outdated) return null
+  return `${plural(summary.outdated, 'nouvelle offre écartée', 'nouvelles offres écartées')} : date limite déjà passée.`
+}
+
 const INTRO = 'Chaque offre ci-dessous a été envoyée dans son propre e-mail à la boîte AO de MyBestConsultant.'
 const FOOTER =
   'Sources : BOAMP, TED, Choisir le service public et les sites carrières des organismes. ' +
@@ -82,6 +89,8 @@ function renderText(summary: DeliverySummary, day: string): string {
   if (problems.length) lines.push('⚠ Points à vérifier', ...problems.map((p) => `- ${p}`), '')
   const pending = pendingLine(summary)
   if (pending) lines.push(pending, '')
+  const outdated = outdatedLine(summary)
+  if (outdated) lines.push(outdated, '')
   lines.push(summary.sent.length ? INTRO : "Aucune nouvelle offre envoyée aujourd'hui.", '')
   for (const section of SECTIONS) {
     const sectionGroups = groups(summary.sent, section.kind)
@@ -120,6 +129,8 @@ function renderHtml(summary: DeliverySummary, day: string): string {
   }
   const pending = pendingLine(summary)
   if (pending) parts.push(`<p><strong>${escapeHtml(pending)}</strong></p>`)
+  const outdated = outdatedLine(summary)
+  if (outdated) parts.push(`<p style="${STYLE.meta}">${escapeHtml(outdated)}</p>`)
   parts.push(`<p>${summary.sent.length ? INTRO : "Aucune nouvelle offre envoyée aujourd'hui."}</p>`)
   for (const section of SECTIONS) {
     const sectionGroups = groups(summary.sent, section.kind)

@@ -74,6 +74,7 @@ export class ScanService {
     const details = new DetailReader()
     const sent: NewListing[] = []
     const refused: string[] = []
+    const outdated: NewListing[] = []
     let deliveryError: string | null = null
     for (const listing of batch) {
       // Au-delà du budget de temps, le reste attend le passage suivant (comme au-delà du plafond) : un passage tué par
@@ -83,6 +84,12 @@ export class ScanService {
         break
       }
       const complete = await this.complete(listing, details)
+      // Date limite déjà passée (souvent connue seulement par la page de l'offre) : rien à envoyer. L'offre est
+      // retenue comme traitée, pour ne pas relire sa page à chaque passage.
+      if (complete.deadline && complete.deadline.slice(0, 10) < today) {
+        outdated.push(listing)
+        continue
+      }
       try {
         await this.mailer.sendOffer(renderOfferEmail(complete))
       } catch (error) {
@@ -100,14 +107,18 @@ export class ScanService {
       sent.push(listing)
     }
 
-    // L'état ne retient que les offres réellement envoyées : les autres redeviennent nouvelles au passage suivant.
-    const sentSet = new Set(sent)
-    const unsent = report.newListings.filter((listing) => !sentSet.has(listing))
+    // L'état ne retient que les offres traitées (envoyées, ou écartées car échues) : les autres redeviennent nouvelles
+    // au passage suivant.
+    const handled = new Set([...sent, ...outdated])
+    const unsent = report.newListings.filter((listing) => !handled.has(listing))
     await this.store.save(forgetUnsent(next, unsent, state))
-    this.logger.log(`${sent.length} offre(s) envoyée(s) à la boîte AO, ${unsent.length} en attente ; état enregistré.`)
+    this.logger.log(
+      `${sent.length} offre(s) envoyée(s) à la boîte AO, ${outdated.length} échue(s) écartée(s), ${unsent.length} en attente ; état enregistré.`,
+    )
 
     const summary: DeliverySummary = {
       sent,
+      outdated: outdated.length,
       pending: unsent.length,
       perRunLimit: this.config.maxOfferEmailsPerRun,
       timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,
@@ -145,6 +156,7 @@ export class ScanService {
   private async preview(batch: NewListing[], report: RunReport, today: string): Promise<DeliverySummary> {
     const summary: DeliverySummary = {
       sent: batch,
+      outdated: 0,
       pending: report.newListings.length - batch.length,
       perRunLimit: this.config.maxOfferEmailsPerRun,
       timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,

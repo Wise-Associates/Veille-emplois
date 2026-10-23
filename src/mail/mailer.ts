@@ -34,6 +34,9 @@ export function explainSmtpError(error: unknown): unknown {
   return error
 }
 
+/** En-tête lu par MyBestConsultant (src/lib/ao/imap.ts) pour classer l'offre dans la source « Scraping ». */
+export const VEILLE_HEADER = 'X-Wise-Veille'
+
 /**
  * Refus définitif d'un message précis (contenu, taille : code 5xx après DATA), par opposition aux erreurs qui
  * touchent tous les envois (connexion, identifiants, expéditeur, quota ou refus temporaire 4xx) : le premier peut être
@@ -55,9 +58,12 @@ export class Mailer implements OnModuleDestroy {
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
-  /** Une offre, vers la boîte AO (OFFERS_TO). */
+  /**
+   * Une offre, vers la boîte AO (OFFERS_TO). L'en-tête X-Wise-Veille fait afficher « Scraping » comme source dans la
+   * page AO de MyBestConsultant (reconnu seulement depuis une adresse de ses domaines).
+   */
   async sendOffer(email: RenderedEmail): Promise<void> {
-    await this.send(email, (mail) => mail.offersTo, 'OFFERS_TO')
+    await this.send(email, (mail) => mail.offersTo, 'OFFERS_TO', { [VEILLE_HEADER]: 'scraping' })
   }
 
   /** Le récapitulatif, vers l'équipe (MAIL_TO). */
@@ -70,12 +76,17 @@ export class Mailer implements OnModuleDestroy {
     this.transport = null
   }
 
-  private async send(email: RenderedEmail, recipients: (mail: MailConfig) => string[], variable: string): Promise<void> {
+  private async send(
+    email: RenderedEmail,
+    recipients: (mail: MailConfig) => string[],
+    variable: string,
+    headers: Record<string, string> = {},
+  ): Promise<void> {
     const mail = this.config.mail
     if (!mail) throw new Error("Envoi demandé sans configuration de messagerie (SMTP_*, MAIL_* et OFFERS_TO dans l'environnement).")
     const to = recipients(mail)
     const info = await this.connection(mail)
-      .sendMail({ from: mail.from, to, subject: email.subject, text: email.text, html: email.html })
+      .sendMail({ from: mail.from, to, subject: email.subject, text: email.text, html: email.html, headers })
       .catch((error: unknown) => {
         throw explainSmtpError(error)
       })
