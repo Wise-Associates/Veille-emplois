@@ -18,7 +18,7 @@ Proparco, Expertise France.
 
 ## Fonctionnement
 
-1. Le workflow GitHub `Veille quotidienne` démarre tous les jours à 5 h UTC.
+1. Le workflow GitHub `Veille quotidienne` démarre quatre fois par jour : 5 h, 9 h, 13 h et 17 h UTC.
 2. Chaque source est lue l'une après l'autre (5 minutes environ). Une source en panne n'empêche pas les autres.
 3. Une annonce est **nouvelle** si son identifiant n'a jamais été envoyé depuis sa source (fichier `etat.json`, sur
    la branche Git `veille-etat`, voir « État de la veille »). Les sources d'offres d'emploi donnent toutes leurs offres
@@ -37,8 +37,9 @@ Proparco, Expertise France.
 7. Une offre n'est retenue comme envoyée qu'une fois son e-mail accepté par le serveur : si le serveur refuse
    (quota, adresse), l'envoi s'arrête et le reste part au passage suivant ; s'il refuse un seul message (contenu),
    celui-ci est sauté, signalé, et retenté au passage suivant.
-8. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`), **même sans nouveauté** (son arrivée prouve que la
-   veille tourne) : offres envoyées, offres en attente, points à vérifier.
+8. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`) : offres envoyées, offres en attente, points à
+   vérifier. Le passage de 5 h l'envoie **toujours, même sans nouveauté** (son arrivée prouve que la veille tourne) ;
+   ceux de 9 h, 13 h et 17 h seulement s'il y a un point à vérifier (`DIGEST_MODE`).
 
 Le récapitulatif signale en tête les **points à vérifier** :
 
@@ -90,9 +91,13 @@ toute lecture (le message nomme la variable, jamais sa valeur).
 - Elle doit aussi être d'un domaine de l'organisation (`@wise-associates.fr`) : MyBestConsultant prend sinon
   l'expéditeur pour le client de toutes les offres, au lieu de l'organisme nommé dans l'e-mail.
 - Les serveurs d'envoi limitent les volumes. La veille ouvre une nouvelle connexion tous les 10 messages (IONOS en
-  refuse plus de 20 par connexion) et n'envoie qu'un message par seconde. Si le serveur limite aussi par heure ou par
-  jour (« Refus temporaire du serveur SMTP » dans le récapitulatif), baisser `MAX_OFFER_EMAILS_PER_RUN` : les offres
-  non envoyées partent simplement au passage suivant.
+  refuse plus de 20 par connexion) et n'envoie qu'un message par seconde. IONOS limite aussi les messages **par
+  heure**, selon l'âge de la boîte (« 450 Mail send limit exceeded ») : 50 la première semaine, 100 jusqu'au
+  14e jour, 400 jusqu'au 30e, 500 ensuite. Régler `MAX_OFFER_EMAILS_PER_RUN` un peu sous cette limite (place laissée
+  au récapitulatif) : 45, puis 90 à partir du 8e jour, puis 200. Avec quatre passages par jour, une file de quelques
+  centaines d'offres s'écoule en quelques jours ; les offres non envoyées partent simplement au passage suivant.
+- Utiliser une **boîte dédiée** à la veille (ex. `veille@wise-associates.fr`) : la limite horaire est celle de la
+  boîte, une boîte partagée bloquerait aussi le courrier de ses utilisateurs.
 
 ## Mise en production (GitHub Actions)
 

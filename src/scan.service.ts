@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { CLOCK, type Clock } from './clock.js'
 import { APP_CONFIG, type AppConfig } from './config.js'
 import { parisDay } from './dates.js'
-import { renderDigest, type DeliverySummary } from './digest/digest.js'
+import { needsAttention, renderDigest, type DeliverySummary } from './digest/digest.js'
 import { renderOfferEmail } from './digest/offer-email.js'
 import type { Listing, ListingDetails, ListingSource } from './listing.js'
 import { isMessageRejection, Mailer } from './mail/mailer.js'
@@ -132,11 +132,17 @@ export class ScanService {
     }
     const digest = renderDigest(summary, today)
     let digestError: string | null = null
-    try {
-      await this.mailer.sendDigest(digest)
-      this.logger.log(`Récapitulatif envoyé : « ${digest.subject} ».`)
-    } catch (error) {
-      digestError = message(error)
+    // Passages de la journée (DIGEST_MODE=problems) : récapitulatif seulement s'il y a un point à vérifier ; celui du
+    // matin l'envoie toujours, son arrivée prouve que la veille tourne.
+    if (this.config.digestMode === 'problems' && !needsAttention(summary)) {
+      this.logger.log(`Récapitulatif non envoyé (DIGEST_MODE=problems, aucun point à vérifier) : « ${digest.subject} ».`)
+    } else {
+      try {
+        await this.mailer.sendDigest(digest)
+        this.logger.log(`Récapitulatif envoyé : « ${digest.subject} ».`)
+      } catch (error) {
+        digestError = message(error)
+      }
     }
     if (deliveryError || refused.length || digestError) {
       throw new PartialDeliveryError(

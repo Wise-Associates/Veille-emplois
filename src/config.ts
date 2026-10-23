@@ -27,9 +27,16 @@ export interface AppConfig {
    * d'envoi (la plupart limitent le nombre de messages par heure). Le reste part aux passages suivants.
    */
   maxOfferEmailsPerRun: number
+  /**
+   * `always` : le récapitulatif part à chaque passage. `problems` : seulement s'il y a un point à vérifier ; pour les
+   * passages de la journée, après celui du matin qui l'envoie toujours (voir le workflow).
+   */
+  digestMode: DigestMode
   /** Absente en essai uniquement. */
   mail: MailConfig | null
 }
+
+export type DigestMode = 'always' | 'problems'
 
 /** Nombre facultatif : une variable vide (secret ou variable GitHub non définis) prend la valeur par défaut. */
 const optionalInt = (fallback: number, min: number, max: number) =>
@@ -53,6 +60,7 @@ const mailSchema = z.object({
 const baseSchema = z.object({
   STATE_FILE: z.string().trim().min(1).default('etat/etat.json'),
   MAX_OFFER_EMAILS_PER_RUN: optionalInt(200, 1, 2000),
+  DIGEST_MODE: z.preprocess((value) => (value === '' ? undefined : value), z.enum(['always', 'problems']).default('always')),
 })
 
 function describeIssues(error: z.ZodError): string {
@@ -63,7 +71,12 @@ function describeIssues(error: z.ZodError): string {
 export function loadConfig(env: Record<string, string | undefined>, dryRun: boolean): AppConfig {
   const base = baseSchema.safeParse(env)
   if (!base.success) throw new Error(`Configuration invalide — ${describeIssues(base.error)}`)
-  const common = { stateFile: base.data.STATE_FILE, dryRun, maxOfferEmailsPerRun: base.data.MAX_OFFER_EMAILS_PER_RUN }
+  const common = {
+    stateFile: base.data.STATE_FILE,
+    dryRun,
+    maxOfferEmailsPerRun: base.data.MAX_OFFER_EMAILS_PER_RUN,
+    digestMode: base.data.DIGEST_MODE,
+  }
   if (dryRun) return { ...common, mail: null }
 
   const mail = mailSchema.safeParse(env)

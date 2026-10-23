@@ -45,6 +45,7 @@ interface Options {
   dryRun?: boolean
   maxOfferEmailsPerRun?: number
   clock?: { now(): Date }
+  digestMode?: AppConfig['digestMode']
 }
 
 async function scanWith(options: Options) {
@@ -52,7 +53,7 @@ async function scanWith(options: Options) {
   const offers: RenderedEmail[] = []
   const digests: RenderedEmail[] = []
   const saved: VeilleState[] = []
-  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, mail: null }
+  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null }
   const mailer = {
     sendOffer: async (email: RenderedEmail) => {
       calls.push('offre')
@@ -207,6 +208,19 @@ describe('passage de la veille', () => {
     const { scan, digests } = await scanWith({ sources: [source('a', new Error('HTTP 503 sur https://exemple.test/flux')), source('b', [offer('B1')])] })
     const summary = await scan.run()
     assert.deepEqual(summary.sent.map((l) => l.id), ['B1'])
+    assert.match(digests[0]?.text ?? '', /Source a : HTTP 503/)
+  })
+
+  it('passage de la journée sans point à vérifier : offres envoyées, état retenu, pas de récapitulatif', async () => {
+    const { scan, calls } = await scanWith({ sources: [source('a', [offer('A2')])], digestMode: 'problems' })
+    await scan.run()
+    assert.deepEqual(calls, ['offre', 'état'])
+  })
+
+  it('passage de la journée avec un point à vérifier : le récapitulatif part', async () => {
+    const { scan, digests } = await scanWith({ sources: [source('a', new Error('HTTP 503')), source('b', [offer('B1')])], digestMode: 'problems' })
+    await scan.run()
+    assert.equal(digests.length, 1)
     assert.match(digests[0]?.text ?? '', /Source a : HTTP 503/)
   })
 

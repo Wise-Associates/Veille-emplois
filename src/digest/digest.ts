@@ -39,6 +39,11 @@ function groups(listings: Listing[], kind: ListingKind): { name: string; listing
   })).filter((group) => group.listings.length > 0)
 }
 
+/** Le passage a-t-il un point à vérifier (envoi interrompu, source en échec, avertissement) ? */
+export function needsAttention(summary: DeliverySummary): boolean {
+  return problemLines(summary).length > 0
+}
+
 function problemLines(summary: DeliverySummary): string[] {
   return [
     ...(summary.deliveryError ? [`Envoi des offres interrompu : ${summary.deliveryError}`] : []),

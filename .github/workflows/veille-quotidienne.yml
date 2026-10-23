@@ -1,9 +1,15 @@
 name: Veille quotidienne
 
 on:
+  # Quatre passages par jour (heures UTC ; 6 h ou 7 h à Paris pour le premier). Les serveurs d'envoi limitent les
+  # messages par heure (IONOS : 50 à 500 selon l'âge de la boîte) : plusieurs petits passages font partir plus d'offres
+  # qu'un seul gros, avec MAX_OFFER_EMAILS_PER_RUN sous la limite horaire. Seul le passage de 5 h envoie toujours le
+  # récapitulatif à l'équipe (DIGEST_MODE ci-dessous). GitHub peut retarder un départ de quelques minutes.
   schedule:
-    # Tous les jours à 5 h UTC (6 h ou 7 h à Paris). GitHub peut retarder le départ de quelques minutes.
     - cron: '0 5 * * *'
+    - cron: '0 9 * * *'
+    - cron: '0 13 * * *'
+    - cron: '0 17 * * *'
   workflow_dispatch:
     inputs:
       essai:
@@ -73,6 +79,9 @@ jobs:
           OFFERS_TO: ${{ secrets.OFFERS_TO }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
           MAX_OFFER_EMAILS_PER_RUN: ${{ vars.MAX_OFFER_EMAILS_PER_RUN }}
+          # Récapitulatif : toujours pour le passage de 5 h et les lancements manuels ; pour les autres passages
+          # planifiés, seulement s'il y a un point à vérifier.
+          DIGEST_MODE: ${{ github.event_name == 'schedule' && github.event.schedule != '0 5 * * *' && 'problems' || 'always' }}
         run: |
           if [ "$ESSAI" = "true" ]; then
             node --enable-source-maps dist/main.js --dry-run

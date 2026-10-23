@@ -13,7 +13,7 @@ const mailEnv = {
 
 describe('configuration', () => {
   it('n\'exige pas la messagerie pour un essai', () => {
-    assert.deepEqual(loadConfig({}, true), { stateFile: 'etat/etat.json', dryRun: true, maxOfferEmailsPerRun: 200, mail: null })
+    assert.deepEqual(loadConfig({}, true), { stateFile: 'etat/etat.json', dryRun: true, maxOfferEmailsPerRun: 200, digestMode: 'always', mail: null })
   })
 
   it('lit la messagerie, la boîte AO et les destinataires du récapitulatif', () => {
@@ -40,6 +40,12 @@ describe('configuration', () => {
     const config = loadConfig({ ...mailEnv, SMTP_PORT: '', MAX_OFFER_EMAILS_PER_RUN: '' }, false)
     assert.equal(config.mail?.port, 587)
     assert.equal(config.maxOfferEmailsPerRun, 200)
+  })
+
+  it('lit le mode du récapitulatif, « always » par défaut', () => {
+    assert.equal(loadConfig({ DIGEST_MODE: 'problems' }, true).digestMode, 'problems')
+    assert.equal(loadConfig({ DIGEST_MODE: '' }, true).digestMode, 'always')
+    assert.throws(() => loadConfig({ DIGEST_MODE: 'jamais' }, true), /DIGEST_MODE/)
   })
 
   it('refuse un plafond d\'envoi aberrant', () => {

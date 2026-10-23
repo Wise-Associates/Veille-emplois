@@ -17,7 +17,8 @@ déjà vues. NestJS a été demandé comme cadre.
 - **Tests avec le lanceur intégré de Node (`node:test`)** sur le code compilé par `tsc`, qui émet les métadonnées de
   décorateurs dont l'injection de Nest a besoin. Écartés : Vitest 5 (son installation fait planter npm 10.9, livré
   avec Node 22, sur un cycle de dépendances pairs vite ↔ vitest) et Jest (exige Node 24.9+ avec NestJS 12).
-- **Planification par GitHub Actions** (`.github/workflows/veille-quotidienne.yml`, 5 h UTC), en trois jobs : le
+- **Planification par GitHub Actions** (`.github/workflows/veille-quotidienne.yml`, 5 h, 9 h, 13 h et 17 h UTC
+  depuis le 23/10/2026 : la limite d'envoi d'IONOS est horaire), en trois jobs : le
   passage s'exécute avec un jeton en lecture seule (une dépendance npm compromise ne peut pas écrire dans le dépôt) ;
   un job sans npm pousse l'état ; un job d'alerte ouvre un ticket en cas d'échec (GitHub ne prévient d'un échec
   planifié que la dernière personne à avoir modifié le cron).

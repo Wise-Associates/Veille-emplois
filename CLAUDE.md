@@ -37,7 +37,8 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
   une liste vide ; valider les réponses JSON avec zod (`HttpClient.json`).
 - Toute règle de reconnaissance d'acheteur (`src/organisations.ts`) s'accompagne d'un cas dans
   `src/tenders/buyer-match.spec.ts`, y compris les homonymes à écarter.
-- Le workflow `veille-quotidienne.yml` n'utilise que des secrets, la variable `MAX_OFFER_EMAILS_PER_RUN` et l'entrée
-  booléenne `essai`, tous passés par `env:` (jamais `${{ }}` dans un script).
+- Le workflow `veille-quotidienne.yml` n'utilise que des secrets, la variable `MAX_OFFER_EMAILS_PER_RUN`, l'entrée
+  booléenne `essai` et `DIGEST_MODE` (calculé d'après l'horaire du passage), tous passés par `env:` (jamais `${{ }}`
+  dans un script). Changer l'horaire de 5 h oblige à changer aussi l'expression de `DIGEST_MODE`.
   Le job qui exécute le code (`passage`) garde un jeton en lecture seule ; seul `enregistrer`, qui n'exécute que git,
   peut écrire. Actions épinglées par SHA (version en commentaire).
