@@ -8,11 +8,12 @@
 import { z } from 'zod'
 import { addDays, frenchDay } from '../dates.js'
 import type { Listing, ListingKind, SourceBatch } from '../listing.js'
+import { ORGANISATIONS } from '../organisations.js'
 
 /**
  * Une annonce absente de sa source est oubliée quand sa dernière date de présence connue a plus de 120 jours (soit
  * 90 à 120 jours après sa disparition, voir CONFIRM_EVERY_DAYS). Si elle réapparaît ensuite (offre republiée), elle
- * est annoncée de nouveau. Doit rester bien plus longue que la fenêtre de lecture des appels d'offres (7 jours).
+ * est annoncée de nouveau. (Un appel d'offres ne quitte la recherche qu'une fois sa date limite passée : il n'y revient pas.)
  */
 export const SEEN_RETENTION_DAYS = 120
 /**
@@ -60,10 +61,11 @@ export type SourceOutcome = { sourceId: string; label: string; kind: ListingKind
   | { ok: false; error: string }
 )
 
+/** Nouvelle annonce, avec la source qui l'a donnée (pour lire son détail et, si elle n'est pas envoyée, l'oublier). */
+export type NewListing = Listing & { sourceId: string }
+
 export interface RunReport {
-  newListings: Listing[]
-  /** Sources lues pour la première fois : leurs annonces sont enregistrées sans être annoncées. */
-  initialised: { label: string; count: number }[]
+  newListings: NewListing[]
   failures: { label: string; error: string }[]
   /** Sources lues sans erreur mais dont le résultat est suspect (page modifiée, blocage…). */
   warnings: { label: string; message: string }[]
@@ -89,7 +91,7 @@ function tenderVolumeWarning(previous: SourceState, count: number, today: string
 export function applyRun(state: VeilleState, outcomes: SourceOutcome[], today: string): { report: RunReport; next: VeilleState } {
   const forgetBefore = addDays(today, -SEEN_RETENTION_DAYS)
   const confirmBefore = addDays(today, -CONFIRM_EVERY_DAYS)
-  const report: RunReport = { newListings: [], initialised: [], failures: [], warnings: [] }
+  const report: RunReport = { newListings: [], failures: [], warnings: [] }
   const sources: Record<string, SourceState> = { ...state.sources }
   const procedures: Record<string, string> = {}
   for (const [id, day] of Object.entries(state.procedures)) {
@@ -121,14 +123,14 @@ export function applyRun(state: VeilleState, outcomes: SourceOutcome[], today: s
       announced.add(listing.id)
       const alreadyAnnounced = listing.procedureId !== undefined && Object.hasOwn(procedures, listing.procedureId)
       if (listing.procedureId) procedures[listing.procedureId] ??= today
-      if (previous && !alreadyAnnounced) report.newListings.push(listing)
+      // Source lue pour la première fois comprise : toutes ses offres en ligne sont envoyées (décision du 22/10/2026).
+      if (!alreadyAnnounced) report.newListings.push({ ...listing, sourceId: outcome.sourceId })
     }
     for (const id of currentIds) {
       const day = Object.hasOwn(seen, id) ? seen[id] : undefined
       if (day === undefined || day < confirmBefore) seen[id] = today
     }
 
-    if (!previous) report.initialised.push({ label: outcome.label, count: currentIds.size })
     if (warning) report.warnings.push({ label: outcome.label, message: warning })
     for (const message of outcome.batch.warnings ?? []) report.warnings.push({ label: outcome.label, message })
     // Après une lecture suspecte, le nombre de référence est gardé : l'alerte revient chaque jour jusqu'à ce que la
@@ -139,4 +141,39 @@ export function applyRun(state: VeilleState, outcomes: SourceOutcome[], today: s
   }
 
   return { report, next: { version: 1, sources, procedures } }
+}
+
+/**
+ * Ordre d'envoi des nouvelles annonces, qui compte quand le plafond par passage est atteint : appels d'offres
+ * d'abord (délais de réponse), puis offres d'emploi ; par organisme dans l'ordre de la liste, les plus récentes d'abord.
+ */
+export function sendingOrder<T extends Listing>(listings: T[]): T[] {
+  const rank = (listing: Listing) => ORGANISATIONS.findIndex((o) => o.id === listing.organisationId)
+  return [...listings].sort(
+    (a, b) =>
+      Number(a.kind === 'job') - Number(b.kind === 'job') ||
+      rank(a) - rank(b) ||
+      (b.publishedOn ?? '').localeCompare(a.publishedOn ?? ''),
+  )
+}
+
+/**
+ * État à retenir quand certaines nouvelles annonces n'ont pas pu être envoyées (plafond du passage, refus du serveur
+ * d'envoi) : elles sont retirées des annonces vues, et redeviennent nouvelles au passage suivant. `previous` : l'état
+ * lu en début de passage, pour ne retirer que ce que ce passage a ajouté.
+ */
+export function forgetUnsent(next: VeilleState, unsent: NewListing[], previous: VeilleState): VeilleState {
+  const sources: Record<string, SourceState> = {}
+  for (const [id, source] of Object.entries(next.sources)) sources[id] = { ...source, seen: { ...source.seen } }
+  const procedures = { ...next.procedures }
+  for (const listing of unsent) {
+    const source = sources[listing.sourceId]
+    if (source && !Object.hasOwn(previous.sources[listing.sourceId]?.seen ?? {}, listing.id)) delete source.seen[listing.id]
+    // Une valeur différente de celle de l'état lu signifie que ce passage l'a posée (ou reposée après son oubli à
+    // 120 jours) : elle est retirée, sinon l'offre non envoyée passerait le lendemain pour un doublon déjà annoncé.
+    if (listing.procedureId && next.procedures[listing.procedureId] !== previous.procedures[listing.procedureId]) {
+      delete procedures[listing.procedureId]
+    }
+  }
+  return { ...next, sources, procedures }
 }

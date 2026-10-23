@@ -27,9 +27,13 @@ env:
 jobs:
   passage:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 200 offres par passage (une par seconde, plus la lecture de leur page) : une quinzaine de minutes au plus.
+    # Augmenter ce délai si MAX_OFFER_EMAILS_PER_RUN est relevé.
+    timeout-minutes: 40
     permissions:
       contents: read
+    outputs:
+      etat-enregistre: ${{ steps.passage.outputs.etat-enregistre }}
     env:
       STATE_FILE: etat/etat.json
     steps:
@@ -58,6 +62,7 @@ jobs:
           fi
 
       - name: Passage de la veille
+        id: passage
         env:
           ESSAI: ${{ inputs.essai }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -65,12 +70,25 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          OFFERS_TO: ${{ secrets.OFFERS_TO }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAX_OFFER_EMAILS_PER_RUN: ${{ vars.MAX_OFFER_EMAILS_PER_RUN }}
         run: |
-          if [ "$ESSAI" = "true" ]; then npm run veille:essai; else npm run veille; fi
+          if [ "$ESSAI" = "true" ]; then
+            node --enable-source-maps dist/main.js --dry-run
+            exit $?
+          fi
+          # Code 0 : tout est parti. Code 3 : état enregistré mais un envoi a échoué (src/main.ts) : l'état est poussé
+          # quand même, sinon les offres déjà envoyées repartiraient au passage suivant. Autre code : rien à pousser.
+          set +e
+          node --enable-source-maps dist/main.js
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]; then echo "etat-enregistre=true" >> "$GITHUB_OUTPUT"; fi
+          exit "$rc"
 
       - name: Transmettre l'état au job d'enregistrement
-        if: ${{ inputs.essai != true }}
+        if: ${{ !cancelled() && steps.passage.outputs.etat-enregistre == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: etat
@@ -80,7 +98,8 @@ jobs:
 
   enregistrer:
     needs: passage
-    if: ${{ inputs.essai != true }}
+    # Aussi quand le passage a échoué après avoir enregistré l'état (code 3) : voir le job « passage ».
+    if: ${{ !cancelled() && needs.passage.outputs.etat-enregistre == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Seul job autorisé à écrire : il n'exécute que git, jamais le code du projet ni npm.
@@ -125,7 +144,8 @@ jobs:
   # toutes les personnes qui suivent le dépôt. Un seul ticket ouvert à la fois, complété à chaque nouvel échec.
   alerte:
     needs: [passage, enregistrer]
-    if: ${{ failure() }}
+    # Un job tué par son délai maximal est « annulé », pas « en échec » : les deux cas ouvrent le ticket.
+    if: ${{ failure() || contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

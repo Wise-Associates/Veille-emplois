@@ -2,7 +2,10 @@ import type { OrganisationId } from './organisations.js'
 
 export type ListingKind = 'tender' | 'job'
 
-/** Une annonce, quelle que soit sa source : un appel d'offres ou une offre d'emploi, telle qu'affichée dans le récapitulatif. */
+/**
+ * Une annonce, quelle que soit sa source : un appel d'offres ou une offre d'emploi. Chacune part dans son propre
+ * e-mail vers la boîte AO de MyBestConsultant, et figure en une ligne dans le récapitulatif de l'équipe.
+ */
 export interface Listing {
   kind: ListingKind
   /** Identifiant stable dans sa source (numéro d'avis, référence d'offre) : c'est lui qui repère les nouveautés. */
@@ -15,8 +18,10 @@ export interface Listing {
   /** Date limite de réponse ou de candidature : AAAA-MM-JJ, ou date-heure ISO quand la source donne l'heure. */
   deadline?: string
   location?: string
-  /** Précisions courtes affichées sous le titre (acheteur exact, type de marché, contrat…). */
+  /** Précisions courtes (acheteur ou employeur exact, type de marché, contrat…). */
   details: string[]
+  /** Texte complet de l'annonce (missions, profil, lots…), en texte brut. */
+  description?: string
   /** Identifiant de procédure commun à BOAMP et TED : le même appel d'offres n'est annoncé qu'une fois. */
   procedureId?: string
 }
@@ -35,13 +40,14 @@ export interface SourceBatch {
 
 /** Ce qu'une source sait de son passage précédent, pour ne faire les appels coûteux que sur les annonces inconnues. */
 export interface SourceContext {
-  /** Première lecture de la source : tout ce qu'elle renvoie est enregistré sans être annoncé. */
-  firstRun: boolean
   isKnown(id: string): boolean
 }
 
+/** Compléments lus sur la page d'une offre, qui remplacent ou complètent ceux de la liste. */
+export type ListingDetails = Partial<Pick<Listing, 'description' | 'deadline' | 'location' | 'publishedOn' | 'details'>>
+
 export interface ListingSource {
-  /** Clé de la source dans le fichier d'état : ne jamais la renommer, sinon la source repart de zéro. */
+  /** Clé de la source dans le fichier d'état : ne jamais la renommer, sinon toutes ses offres seraient renvoyées. */
   readonly id: string
   /** Nom lisible, affiché dans le récapitulatif en cas de problème. */
   readonly label: string
@@ -51,4 +57,9 @@ export interface ListingSource {
    */
   readonly kind: ListingKind
   fetch(context: SourceContext): Promise<SourceBatch>
+  /**
+   * Pour les sources dont la liste ne donne pas tout (description, date limite) : lecture de la page d'une offre,
+   * faite seulement au moment de l'envoyer.
+   */
+  describe?(listing: Listing): Promise<ListingDetails>
 }

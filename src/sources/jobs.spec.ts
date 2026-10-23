@@ -1,11 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { beetweenJobToListing } from './autorite-concurrence.source.js'
-import { parseBanquePostalePage } from './banque-postale.source.js'
-import { parseCspFeed } from './choisir-le-service-public.source.js'
+import { parseBanquePostaleOfferPage, parseBanquePostalePage } from './banque-postale.source.js'
+import { parseCspFeed, parseCspOfferPage } from './choisir-le-service-public.source.js'
 import { findRecruitmentLinks } from './crh.source.js'
 import { extractCareerSiteContext, isProparcoLocation, isProparcoTitle } from './proparco.source.js'
-import { parseCareersFeed } from './rss-careers.source.js'
+import { parseCareersFeed, parseJobPostingPage } from './rss-careers.source.js'
 
 // Contenus fictifs, construits sur la structure réelle des sites (octobre 2026).
 
@@ -30,8 +30,28 @@ describe('offres de Choisir le service public', () => {
         url: 'https://choisirleservicepublic.gouv.fr/offre-emploi/2026-0000001/',
         location: '1 rue Fictive 75000 Paris',
         details: ['Numérique/Cheffe de projet', 'Emploi ouvert aux contractuels'],
+        description: undefined,
       },
     ])
+  })
+
+  it('reprend la description du flux en texte brut', () => {
+    const xml = rss(`<item><title>2026-0000002 - Offre fictive</title><link>https://choisirleservicepublic.gouv.fr/offre-emploi/2026-0000002/</link>
+      <description>&lt;b&gt;Description du poste : &lt;/b&gt;&lt;br /&gt;Piloter un projet fictif</description></item>`)
+    assert.equal(parseCspFeed(xml, 'dinum')[0]?.description, 'Description du poste :\nPiloter un projet fictif')
+  })
+
+  it('lit sur la page de l\'offre l\'employeur, la date de publication et la date limite', () => {
+    const html = `<script type="application/ld+json">{"@type":"JobPosting","title":"Offre fictive","datePosted":"19/10/2026",
+      "hiringOrganization":"Direction fictive (DINUM)"}</script><main><p>Date limite de candidature : 16/11/2026</p></main>`
+    const listing = parseCspFeed(rss('<item><title>2026-0000003 - Offre fictive</title><link>x</link><category>Numérique</category></item>'), 'dinum')[0]
+    assert.ok(listing)
+    assert.deepEqual(parseCspOfferPage(html, listing), {
+      publishedOn: '2026-10-19',
+      deadline: '2026-11-16',
+      details: ['Employeur : Direction fictive (DINUM)', 'Numérique'],
+    })
+    assert.throws(() => parseCspOfferPage('<html><body>Offre dépubliée</body></html>', listing), /Page sans offre/)
   })
 
   it('refuse une offre sans référence plutôt que de la suivre sans identifiant stable', () => {
@@ -64,6 +84,25 @@ describe('flux carrières (SFIL, Expertise France)', () => {
     assert.equal(parseCareersFeed(xml, 'sfil', 'sfil.fr')[0]?.title, 'Stage – Juriste fictif')
   })
 
+  it('prend le texte complet d\'une offre WordPress (content:encoded)', () => {
+    const xml = rss(`<item><title>CDI – Ingénieur fictif</title><link>https://sfil.fr/offres-emploi/ingenieur-fictif/</link>
+      <description><![CDATA[<p>Résumé coupé…</p>]]></description>
+      <content:encoded><![CDATA[<p><strong>Missions</strong></p><ul><li>Concevoir des outils fictifs</li></ul>]]></content:encoded></item>`)
+    assert.equal(parseCareersFeed(xml, 'sfil', 'sfil.fr')[0]?.description, 'Missions\n- Concevoir des outils fictifs')
+  })
+
+  it('lit la description, la date limite et le lieu dans les données structurées d\'une page d\'offre', () => {
+    const html = `<script type="application/ld+json">{"@type":"JobPosting","description":"<p>Mission d&#8217;expertise fictive</p>",
+      "datePosted":"2026-10-22T00:00:00","validThrough":"2026-11-07T00:00:00",
+      "jobLocation":{"@type":"Place","address":{"addressLocality":"","addressRegion":"Afrique","addressCountry":"Cap Vert"}}}</script>`
+    assert.deepEqual(parseJobPostingPage(html), {
+      description: 'Mission d’expertise fictive',
+      deadline: '2026-11-07',
+      publishedOn: '2026-10-22',
+      location: 'Cap Vert',
+    })
+  })
+
   it('refuse un lien d\'offre vers un autre site que celui de l\'organisme', () => {
     const xml = rss('<item><title>Offre fictive</title><link>https://sfil-recrutement.exemple.test/connexion</link><guid>1</guid></item>')
     assert.throws(() => parseCareersFeed(xml, 'sfil', 'sfil.fr'), /Lien d'offre inattendu/)
@@ -79,6 +118,8 @@ describe('sites carrières', () => {
       creationDate: '2026-10-12T00:00:00.000+00:00',
       city: 'Paris',
       contractType: 'Stage',
+      descriptionMission: '<p>Analyser des données fictives</p>',
+      descriptionProfile: '<p>Master en économie</p>',
     })
     assert.deepEqual(listing, {
       kind: 'job',
@@ -89,7 +130,20 @@ describe('sites carrières', () => {
       publishedOn: '2026-10-12',
       location: 'Paris',
       details: ['Stage'],
+      description: 'Missions\nAnalyser des données fictives\n\nProfil recherché\nMaster en économie',
     })
+  })
+
+  it('La Banque Postale : lit le texte de l\'offre sur sa page, sans la présentation générale', () => {
+    const section = (title: string, body: string) =>
+      `<div class="o-jobOffer-details__content"><h2 class="o-jobOffer-details__content__title">${title}</h2>` +
+      `<div class="o-jobOffer-details__content__desc m-text"><p>${body}</p></div></div>`
+    const html = section('Introduction', 'Présentation générale') + section("Description de l'offre", 'Analyser des dossiers fictifs') +
+      section('Informations complémentaires', 'Bac+5 fictif')
+    assert.deepEqual(parseBanquePostaleOfferPage(html), {
+      description: "Description de l'offre\nAnalyser des dossiers fictifs\n\nInformations complémentaires\nBac+5 fictif",
+    })
+    assert.throws(() => parseBanquePostaleOfferPage('<html><body>Access Denied</body></html>'), /Texte de l'offre introuvable/)
   })
 
   it('La Banque Postale : lit les cartes d\'offres et le nombre de pages', () => {

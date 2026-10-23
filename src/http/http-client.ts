@@ -22,7 +22,16 @@ export interface RequestOptions {
   /** Corps JSON (envoyé avec Content-Type: application/json). */
   json?: unknown
   timeoutMs?: number
+  /** Nouvelle tentative sur une panne passagère (par défaut oui). */
+  retry?: boolean
 }
+
+/**
+ * Lecture de la page d'une offre au moment de l'envoyer : délai court et sans nouvelle tentative, car elle se répète
+ * pour des centaines d'offres et un site lent ferait dépasser la durée maximale du passage. Un échec n'empêche pas
+ * l'envoi de l'offre (il est signalé).
+ */
+export const OFFER_PAGE_REQUEST: RequestOptions = { timeoutMs: 15_000, retry: false }
 
 export class HttpError extends Error {
   constructor(
@@ -76,12 +85,15 @@ export class HttpClient {
   private readonly logger = new Logger(HttpClient.name)
 
   async text(url: string, options: RequestOptions & { encoding?: 'utf-8' | 'latin1' } = {}): Promise<string> {
-    const { body } = await this.request(url, options)
+    // En-tête Accept standard : sans lui, la protection du site de La Banque Postale refuse ses pages d'offres
+    // (User-Agent inchangé : on ne se fait pas passer pour un navigateur).
+    const headers = { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', ...options.headers }
+    const { body } = await this.request(url, { ...options, headers })
     return new TextDecoder(options.encoding ?? 'utf-8').decode(body)
   }
 
   async json<T>(url: string, schema: z.ZodType<T>, options: RequestOptions = {}): Promise<T> {
-    const { body } = await this.request(url, options)
+    const { body } = await this.request(url, { ...options, headers: { Accept: 'application/json', ...options.headers } })
     let parsed: unknown
     try {
       parsed = JSON.parse(new TextDecoder().decode(body))
@@ -104,6 +116,7 @@ export class HttpClient {
     try {
       return await this.attempt(url, options)
     } catch (error) {
+      if (options.retry === false) throw error
       if (!(error instanceof HttpError) || (error.status !== undefined && !isTransient(error.status))) throw error
       this.logger.warn(`${error.message} — nouvelle tentative dans ${RETRY_DELAY_MS / 1000} s`)
       await sleep(RETRY_DELAY_MS)

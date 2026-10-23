@@ -5,94 +5,201 @@ import { Logger } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { CLOCK } from './clock.js'
 import { APP_CONFIG, type AppConfig } from './config.js'
-import type { Digest } from './digest/digest.js'
+import type { RenderedEmail } from './digest/format.js'
 import type { Listing, ListingSource } from './listing.js'
 import { Mailer } from './mail/mailer.js'
-import { ScanService } from './scan.service.js'
+import { PartialDeliveryError, ScanService } from './scan.service.js'
 import { LISTING_SOURCES } from './sources/sources.js'
 import { EMPTY_STATE, type VeilleState } from './state/run-state.js'
 import { StateStore } from './state/state-store.js'
 
 Logger.overrideLogger(false)
 
-const offer = (id: string): Listing => ({ kind: 'job', id, organisationId: 'dinum', title: `Offre fictive ${id}`, url: `https://exemple.test/${id}`, details: [] })
+const offer = (id: string, overrides: Partial<Listing> = {}): Listing => ({
+  kind: 'job',
+  id,
+  organisationId: 'dinum',
+  title: `Offre fictive ${id}`,
+  url: `https://exemple.test/${id}`,
+  details: [],
+  ...overrides,
+})
 
-const source = (id: string, fetch: ListingSource['fetch']): ListingSource => ({ id, label: `Source ${id}`, kind: 'job', fetch })
-
-const known: VeilleState = {
-  ...EMPTY_STATE,
-  sources: {
-    a: { seen: { A1: '2026-10-21' }, lastCount: 1, lastSuccessOn: '2026-10-21' },
-    b: { seen: {}, lastCount: 0, lastSuccessOn: '2026-10-21' },
+const source = (id: string, listings: Listing[] | Error, extra: Partial<ListingSource> = {}): ListingSource => ({
+  id,
+  label: `Source ${id}`,
+  kind: 'job',
+  fetch: async () => {
+    if (listings instanceof Error) throw listings
+    return { listings, ignoredIds: [] }
   },
+  ...extra,
+})
+
+const known: VeilleState = { ...EMPTY_STATE, sources: { a: { seen: { A1: '2026-10-21' }, lastCount: 1, lastSuccessOn: '2026-10-21' } } }
+
+interface Options {
+  sources: ListingSource[]
+  sendOffer?: (email: RenderedEmail) => Promise<void>
+  sendDigest?: (email: RenderedEmail) => Promise<void>
+  dryRun?: boolean
+  maxOfferEmailsPerRun?: number
+  clock?: { now(): Date }
 }
 
-async function scanWith(options: { sources: ListingSource[]; send?: (digest: Digest) => Promise<void>; dryRun?: boolean }) {
+async function scanWith(options: Options) {
   const calls: string[] = []
-  const sent: Digest[] = []
+  const offers: RenderedEmail[] = []
+  const digests: RenderedEmail[] = []
   const saved: VeilleState[] = []
-  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, mail: null }
+  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, mail: null }
+  const mailer = {
+    sendOffer: async (email: RenderedEmail) => {
+      calls.push('offre')
+      await options.sendOffer?.(email)
+      offers.push(email)
+    },
+    sendDigest: async (email: RenderedEmail) => {
+      calls.push('récapitulatif')
+      await options.sendDigest?.(email)
+      digests.push(email)
+    },
+  }
   const module = await Test.createTestingModule({
     providers: [
       ScanService,
       { provide: LISTING_SOURCES, useValue: options.sources },
-      { provide: CLOCK, useValue: { now: () => new Date('2026-10-22T05:00:00Z') } },
+      { provide: CLOCK, useValue: options.clock ?? { now: () => new Date('2026-10-22T05:00:00Z') } },
       { provide: APP_CONFIG, useValue: config },
-      { provide: StateStore, useValue: { load: async () => known, save: async (state: VeilleState) => (calls.push('save'), saved.push(state)) } },
-      {
-        provide: Mailer,
-        useValue: { send: async (digest: Digest) => (calls.push('send'), await (options.send?.(digest) ?? Promise.resolve()), sent.push(digest)) },
-      },
+      { provide: StateStore, useValue: { load: async () => known, save: async (state: VeilleState) => (calls.push('état'), saved.push(state)) } },
+      { provide: Mailer, useValue: mailer },
     ],
   }).compile()
-  return { scan: module.get(ScanService), calls, sent, saved }
+  return { scan: module.get(ScanService), calls, offers, digests, saved }
 }
 
+const seenIds = (state: VeilleState | undefined, sourceId: string) => Object.keys(state?.sources[sourceId]?.seen ?? {}).sort()
+
 describe('passage de la veille', () => {
-  it('envoie le récapitulatif des nouveautés, puis seulement retient l\'état', async () => {
-    const { scan, calls, sent, saved } = await scanWith({ sources: [source('a', async () => ({ listings: [offer('A1'), offer('A2')], ignoredIds: [] }))] })
-    const report = await scan.run()
-    assert.deepEqual(report.newListings.map((l) => l.id), ['A2'])
-    assert.deepEqual(calls, ['send', 'save'])
-    assert.match(sent[0]?.subject ?? '', /1 offre d'emploi/)
-    assert.deepEqual(Object.keys(saved[0]?.sources['a']?.seen ?? {}).sort(), ['A1', 'A2'])
+  it('envoie chaque nouvelle offre dans son propre e-mail, retient l\'état, puis envoie le récapitulatif', async () => {
+    const { scan, calls, offers, digests, saved } = await scanWith({ sources: [source('a', [offer('A1'), offer('A2'), offer('A3')])] })
+    const summary = await scan.run()
+    assert.deepEqual(calls, ['offre', 'offre', 'état', 'récapitulatif'])
+    assert.deepEqual(offers.map((o) => o.subject), ["Offre d'emploi — DINUM — Offre fictive A2", "Offre d'emploi — DINUM — Offre fictive A3"])
+    assert.deepEqual(summary.sent.map((l) => l.id), ['A2', 'A3'])
+    assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A3'])
+    assert.match(digests[0]?.subject ?? '', /2 offres d'emploi envoyées/)
   })
 
-  it('ne retient pas l\'état si l\'envoi échoue : les nouveautés seront annoncées au passage suivant', async () => {
-    const { scan, calls } = await scanWith({
-      sources: [source('a', async () => ({ listings: [offer('A2')], ignoredIds: [] }))],
-      send: async () => {
+  it('complète l\'offre par sa page, et l\'envoie quand même si la page est illisible', async () => {
+    const describe = async (listing: Listing) => {
+      if (listing.id === 'B2') throw new Error('page modifiée')
+      return { description: 'Missions fictives', deadline: '2026-11-16' }
+    }
+    const { scan, offers, digests } = await scanWith({ sources: [source('b', [offer('B1'), offer('B2')], { describe })] })
+    await scan.run()
+    assert.match(offers[0]?.text ?? '', /Missions fictives/)
+    assert.match(offers[0]?.text ?? '', /Date limite de candidature : 16\/11\/2026/)
+    assert.match(offers[1]?.text ?? '', /Pas de description dans la source/)
+    assert.match(digests[0]?.text ?? '', /Source b : 1 offre\(s\) envoyée\(s\) sans le détail de leur page/)
+  })
+
+  it('n\'envoie pas plus que le plafond : le reste reste nouveau pour le passage suivant', async () => {
+    const { scan, offers, saved, digests } = await scanWith({
+      sources: [source('a', [offer('A2'), offer('A3'), offer('A4')])],
+      maxOfferEmailsPerRun: 2,
+    })
+    const summary = await scan.run()
+    assert.equal(offers.length, 2)
+    assert.equal(summary.pending, 1)
+    assert.equal(seenIds(saved[0], 'a').length, 3, 'A1 connue + 2 envoyées')
+    assert.match(digests[0]?.subject ?? '', /— 1 en attente/)
+  })
+
+  it('envoie les appels d\'offres en premier', async () => {
+    const { scan, offers } = await scanWith({
+      sources: [source('a', [offer('A2')]), source('t', [offer('T1', { kind: 'tender', organisationId: 'insee' })])],
+      maxOfferEmailsPerRun: 1,
+    })
+    await scan.run()
+    assert.match(offers[0]?.subject ?? '', /^Appel d'offres — INSEE/)
+  })
+
+  it('arrête d\'envoyer si le serveur refuse, retient seulement ce qui est parti, et le signale', async () => {
+    let count = 0
+    const { scan, saved, digests } = await scanWith({
+      sources: [source('a', [offer('A2'), offer('A3'), offer('A4')])],
+      sendOffer: async () => {
+        if (++count === 2) throw new Error('quota dépassé')
+      },
+    })
+    await assert.rejects(scan.run(), PartialDeliveryError)
+    assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2'], 'A3 et A4 repartiront')
+    assert.match(digests[0]?.text ?? '', /Envoi des offres interrompu : quota dépassé/)
+  })
+
+  it('saute une offre refusée pour son contenu, envoie les suivantes et la retentera au passage suivant', async () => {
+    const { scan, offers, saved, digests } = await scanWith({
+      sources: [source('a', [offer('A2'), offer('A3'), offer('A4')])],
+      sendOffer: async (email) => {
+        if (email.subject.endsWith('A3')) throw Object.assign(new Error('Message failed: 554 contenu refusé'), { code: 'EMESSAGE', responseCode: 554 })
+      },
+    })
+    await assert.rejects(scan.run(), /1 offre\(s\) refusée\(s\)/)
+    assert.equal(offers.length, 2)
+    assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A4'])
+    assert.match(digests[0]?.text ?? '', /Offre refusée, retentée au prochain passage : « Offre fictive A3 »/)
+  })
+
+  it('cesse de commencer des offres une fois le budget de temps atteint, sans erreur', async () => {
+    let now = new Date('2026-10-22T05:00:00Z').getTime()
+    const { scan, offers, saved } = await scanWith({
+      sources: [source('a', [offer('A2'), offer('A3'), offer('A4'), offer('A5')])],
+      clock: { now: () => new Date(now) },
+      // Chaque envoi « dure » 10 minutes : le budget de 25 minutes laisse partir 3 offres.
+      sendOffer: async () => {
+        now += 10 * 60_000
+      },
+    })
+    const summary = await scan.run()
+    assert.equal(offers.length, 3)
+    assert.equal(summary.pending, 1)
+    assert.equal(seenIds(saved[0], 'a').length, 4, 'A1 connue + 3 envoyées')
+  })
+
+  it('abandonne la lecture des pages d\'une source après 3 échecs de suite, et envoie quand même ses offres', async () => {
+    let reads = 0
+    const describe = async () => {
+      reads++
+      throw new Error('délai dépassé')
+    }
+    const { scan, offers, digests } = await scanWith({ sources: [source('b', ['B1', 'B2', 'B3', 'B4', 'B5'].map((id) => offer(id)), { describe })] })
+    await scan.run()
+    assert.equal(reads, 3)
+    assert.equal(offers.length, 5)
+    assert.match(digests[0]?.text ?? '', /5 offre\(s\) envoyée\(s\) sans le détail de leur page \(lecture impossible, abandonnée après 3 échecs de suite\)/)
+  })
+
+  it('retient l\'état même si le récapitulatif ne part pas : les offres envoyées ne repartiront pas', async () => {
+    const { scan, saved } = await scanWith({
+      sources: [source('a', [offer('A2')])],
+      sendDigest: async () => {
         throw new Error('SMTP indisponible')
       },
     })
-    await assert.rejects(scan.run(), /SMTP indisponible/)
-    assert.deepEqual(calls, ['send'])
+    await assert.rejects(scan.run(), /récapitulatif non envoyé \(SMTP indisponible\)/)
+    assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2'])
   })
 
   it('poursuit après une source en échec et la signale dans le récapitulatif', async () => {
-    const { scan, sent } = await scanWith({
-      sources: [
-        source('a', async () => {
-          throw new Error('HTTP 503 sur https://exemple.test/flux')
-        }),
-        source('b', async () => ({ listings: [offer('B1')], ignoredIds: [] })),
-      ],
-    })
-    const report = await scan.run()
-    assert.deepEqual(report.newListings.map((l) => l.id), ['B1'])
-    assert.match(sent[0]?.text ?? '', /Source a : HTTP 503/)
-  })
-
-  it('indique à chaque source ce qu\'elle a déjà vu', async () => {
-    const contexts: { firstRun: boolean; a1: boolean }[] = []
-    const record: ListingSource['fetch'] = async (context) => (contexts.push({ firstRun: context.firstRun, a1: context.isKnown('A1') }), { listings: [], ignoredIds: [] })
-    const { scan } = await scanWith({ sources: [source('a', record), source('nouvelle', record)] })
-    await scan.run()
-    assert.deepEqual(contexts, [{ firstRun: false, a1: true }, { firstRun: true, a1: false }])
+    const { scan, digests } = await scanWith({ sources: [source('a', new Error('HTTP 503 sur https://exemple.test/flux')), source('b', [offer('B1')])] })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['B1'])
+    assert.match(digests[0]?.text ?? '', /Source a : HTTP 503/)
   })
 
   it('en essai, n\'envoie rien et ne retient rien', async () => {
-    const { scan, calls } = await scanWith({ sources: [source('a', async () => ({ listings: [offer('A2')], ignoredIds: [] }))], dryRun: true })
+    const { scan, calls } = await scanWith({ sources: [source('a', [offer('A2')])], dryRun: true })
     await scan.run()
     assert.deepEqual(calls, [])
   })

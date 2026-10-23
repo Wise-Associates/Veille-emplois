@@ -26,9 +26,9 @@ déjà vues. NestJS a été demandé comme cadre.
 
 ## Conséquences
 
-- L'e-mail part **avant** l'enregistrement de l'état : un échec d'envoi fait réannoncer les nouveautés le lendemain ;
-  un échec après l'envoi (poussée Git) peut produire un doublon le lendemain, jamais une perte.
-- Les appels d'offres sont relus sur 7 jours glissants : un passage manqué (panne de GitHub, d'une source) est
+- Une offre n'est retenue qu'une fois son e-mail parti (détail et codes de sortie : ADR 0003) : un échec d'envoi la
+  fait repartir au passage suivant ; un échec après l'envoi (poussée Git) peut produire un doublon, jamais une perte.
+- Les appels d'offres encore ouverts sont relus à chaque passage : un passage manqué (panne de GitHub, d'une source) est
   rattrapé au suivant.
 - La branche `veille-etat` ne doit pas être protégée contre l'écriture par `github-actions[bot]`, ni supprimée (toutes
   les sources repartiraient de zéro : leurs annonces en ligne seraient réenregistrées sans être annoncées).

@@ -9,16 +9,19 @@ import type { HttpClient } from '../http/http-client.js'
 import type { Listing, ListingSource, SourceBatch } from '../listing.js'
 import { ORGANISATIONS, type Organisation } from '../organisations.js'
 import { matchOrganisation, type Buyer } from '../tenders/buyer-match.js'
+import { limitText } from '../text.js'
 
 const API_URL = 'https://boamp-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/boamp/records'
 /**
- * Fenêtre relue à chaque passage : couvre quelques passages manqués, et les avis ajoutés au jeu de données après
- * leur date de parution. Les avis déjà vus sont reconnus grâce au fichier d'état.
+ * Chaque passage relit tous les avis encore ouverts (date limite de réponse non passée) publiés depuis 120 jours : le
+ * premier passage envoie ainsi tous les appels d'offres auxquels on peut encore répondre, et un passage manqué est
+ * rattrapé tant que l'avis est ouvert. Les avis déjà envoyés sont reconnus grâce au fichier d'état. 120 jours couvrent
+ * largement les délais de réponse (une quarantaine d'avis ouverts en octobre 2026, BOAMP et TED réunis).
  */
-export const LOOKBACK_DAYS = 7
+export const PUBLICATION_LOOKBACK_DAYS = 120
 /** Limite imposée par l'API. */
 const PAGE_SIZE = 100
-/** Garde-fou : une semaine d'avis pour ces organismes en compte une vingtaine. */
+/** Garde-fou : une vingtaine d'avis ouverts pour ces organismes en octobre 2026. */
 const MAX_PAGES = 10
 
 const recordSchema = z.object({
@@ -32,6 +35,7 @@ const recordSchema = z.object({
   procedure_libelle: z.string().nullish(),
   contractfolderid: z.string().nullish(),
   url_avis: z.string().nullish(),
+  code_departement: z.array(z.string()).nullish(),
   donnees: z.string().nullish(),
 })
 const pageSchema = z.object({ total_count: z.number().int(), results: z.array(recordSchema) })
@@ -40,8 +44,11 @@ export type BoampRecord = z.infer<typeof recordSchema>
 
 const MARKET_TYPES: Record<string, string> = { SERVICES: 'Services', FOURNITURES: 'Fournitures', TRAVAUX: 'Travaux' }
 
-/** Requête OpenDataSoft : avis de marché initiaux (ni rectificatifs ni résultats) des organismes suivis. */
-export function boampWhere(since: string, organisations: readonly Organisation[] = ORGANISATIONS): string {
+/**
+ * Requête OpenDataSoft : avis de marché initiaux (ni rectificatifs ni résultats) des organismes suivis, publiés depuis
+ * `since` et encore ouverts le jour `today` (un avis sans date limite est gardé : rien ne dit qu'il est clos).
+ */
+export function boampWhere(since: string, today: string, organisations: readonly Organisation[] = ORGANISATIONS): string {
   const ruleClauses = organisations.flatMap((organisation) =>
     organisation.tenderRules.map((rule) => {
       const buyer = [
@@ -54,7 +61,10 @@ export function boampWhere(since: string, organisations: readonly Organisation[]
     }),
   )
   // Au BOAMP, un rectificatif d'avis européen garde nature = APPEL_OFFRE : seul etat = INITIAL désigne un nouvel avis.
-  return `dateparution>=date'${since}' AND nature="APPEL_OFFRE" AND etat="INITIAL" AND (${ruleClauses.join(' OR ')})`
+  return (
+    `dateparution>=date'${since}' AND (datelimitereponse>=date'${today}' OR datelimitereponse is null) ` +
+    `AND nature="APPEL_OFFRE" AND etat="INITIAL" AND (${ruleClauses.join(' OR ')})`
+  )
 }
 
 type Json = unknown
@@ -121,14 +131,62 @@ export function extractBoampBuyers(donnees: Json): Buyer[] {
 export function boampBuyers(record: BoampRecord): { buyers: Buyer[]; unreadable: boolean } {
   const named: Buyer[] = record.nomacheteur ? [{ name: record.nomacheteur }] : []
   if (!record.donnees) return { buyers: named, unreadable: false }
-  let donnees: Json
-  try {
-    donnees = JSON.parse(record.donnees)
-  } catch {
-    return { buyers: named, unreadable: true }
-  }
+  const donnees = parseDonnees(record)
+  if (donnees === null) return { buyers: named, unreadable: true }
   const declared = extractBoampBuyers(donnees)
   return { buyers: [...named, ...declared], unreadable: declared.length === 0 }
+}
+
+/** Contenu de l'avis, ou null s'il est illisible (signalé par la source, voir boampBuyers). */
+function parseDonnees(record: BoampRecord): Json | null {
+  if (!record.donnees) return {}
+  try {
+    return JSON.parse(record.donnees)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Texte de l'avis (objet détaillé, caractéristiques, lots) et lieu d'exécution. Seuls ces champs sont lus : l'avis
+ * contient aussi des contacts nominatifs, jamais repris.
+ */
+export function boampDescription(donnees: Json): { description?: string; location?: string } {
+  const eforms = child(donnees, 'EFORMS')
+  let summary: (string | undefined)[]
+  let lots: { name?: string; description?: string }[]
+  let location: string | undefined
+  if (eforms && typeof eforms === 'object') {
+    const root = Object.values(eforms as Record<string, Json>)[0]
+    const project = child(root, 'cac:ProcurementProject')
+    summary = [text(child(project, 'cbc:Description'))]
+    location = text(child(child(project, 'cac:RealizedLocation'), 'cbc:Description'))
+    lots = list(child(root, 'cac:ProcurementProjectLot')).map((lot) => {
+      const lotProject = child(lot, 'cac:ProcurementProject')
+      return { name: text(child(lotProject, 'cbc:Name')), description: text(child(lotProject, 'cbc:Description')) }
+    })
+  } else {
+    // Avis nationaux : FNSimple (natureMarche), MAPA (description, caractéristiques).
+    const initial = child(Object.values((donnees && typeof donnees === 'object' ? donnees : {}) as Record<string, Json>)[0], 'initial')
+    summary = [
+      text(child(child(initial, 'natureMarche'), 'description')),
+      text(child(child(initial, 'description'), 'objet')),
+      text(child(child(initial, 'caracteristiques'), 'principales')),
+    ]
+    lots = list(child(child(initial, 'lots'), 'lot')).map((lot) => ({ name: text(child(lot, 'intitule')), description: text(child(lot, 'description')) }))
+  }
+  // Les acheteurs écrivent souvent « lot 1 : Désamiantage » : le numéro est déjà donné par la ligne.
+  const withoutNumber = (part: string | undefined) => part?.replace(/^lot\s*n?°?\s*\d+\s*[:\-–—]\s*/i, '').trim() || undefined
+  const lotLines = lots
+    .map((lot, index) => {
+      const parts = [withoutNumber(lot.name), withoutNumber(lot.description)].filter(
+        (part, i, all): part is string => Boolean(part) && all.indexOf(part) === i,
+      )
+      return parts.length ? `- Lot ${index + 1} : ${parts.join(' — ')}` : ''
+    })
+    .filter(Boolean)
+  const blocks = [[...new Set(summary.filter(Boolean))].join('\n\n'), lotLines.length ? `Lots\n${lotLines.join('\n')}` : ''].filter(Boolean)
+  return { description: blocks.length ? limitText(blocks.join('\n\n')) : undefined, location }
 }
 
 /** Annonce correspondant à un avis BOAMP, ou null si aucun de ses acheteurs n'est un organisme suivi. */
@@ -138,6 +196,8 @@ export function boampRecordToListing(record: BoampRecord, organisations: readonl
   if (!organisationId) return null
 
   const marketTypes = (record.type_marche ?? []).map((type) => MARKET_TYPES[type] ?? type).join(', ')
+  const { description, location } = boampDescription(parseDonnees(record) ?? {})
+  const departments = (record.code_departement ?? []).filter(Boolean)
   return {
     kind: 'tender',
     id: record.idweb,
@@ -153,6 +213,8 @@ export function boampRecordToListing(record: BoampRecord, organisations: readonl
       ...(record.procedure_libelle ? [record.procedure_libelle] : []),
       ...(record.famille_libelle ? [record.famille_libelle] : []),
     ],
+    location: location ?? (departments.length ? `Département(s) ${departments.join(', ')}` : undefined),
+    description,
     procedureId: record.contractfolderid ?? undefined,
   }
 }
@@ -168,10 +230,11 @@ export class BoampSource implements ListingSource {
   ) {}
 
   async fetch(): Promise<SourceBatch> {
-    const where = boampWhere(addDays(parisDay(this.now()), -LOOKBACK_DAYS))
+    const today = parisDay(this.now())
+    const where = boampWhere(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today)
     const records: BoampRecord[] = []
     for (let page = 0; ; page++) {
-      if (page >= MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis sur ${LOOKBACK_DAYS} jours : requête à vérifier.`)
+      if (page >= MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis ouverts : requête à vérifier.`)
       const params = new URLSearchParams({ where, order_by: 'dateparution desc', limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
       const response = await this.http.json(`${API_URL}?${params}`, pageSchema)
       records.push(...response.results)
@@ -183,8 +246,8 @@ export class BoampSource implements ListingSource {
     const warnings = unreadable.length
       ? [`${unreadable.length} avis au contenu illisible (${unreadable.slice(0, 5).join(', ')}) : reconnus par le seul nom d'acheteur, le format a peut-être changé.`]
       : []
-    // Les avis d'autres acheteurs ne sont pas retenus comme vus : la fenêtre de 7 jours est relue à chaque passage, et
-    // une règle d'organisme corrigée doit pouvoir rattraper les avis de la semaine.
+    // Les avis d'autres acheteurs ne sont pas retenus comme vus : les avis ouverts sont relus à chaque passage, et
+    // une règle d'organisme corrigée doit pouvoir rattraper les avis encore ouverts.
     return { listings, ignoredIds: [], warnings }
   }
 }

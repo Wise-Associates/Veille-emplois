@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { dayFromFrenchDate } from '../dates.js'
 import type { HttpClient } from '../http/http-client.js'
 import type { Listing, ListingSource, SourceBatch, SourceContext } from '../listing.js'
+import { htmlToText } from '../text.js'
 
 const CAREER_SITE = 'https://afd.csod.com/ux/ats/careersite/5/home?c=afd'
 const DETAIL_URL = (id: string) => `https://afd.csod.com/services/x/job-requisition/v2/requisitions/${encodeURIComponent(id)}/jobDetails?cultureId=13`
@@ -34,6 +35,7 @@ const requisitionSchema = z.object({
   postingEffectiveDate: z.string().nullish(),
   postingExpirationDate: z.string().nullish(),
   locations: z.array(z.object({ city: z.string().nullish(), country: z.string().nullish() })).nullish(),
+  externalDescription: z.string().nullish(),
 })
 const searchSchema = z.object({ data: z.object({ totalCount: z.number().int(), requisitions: z.array(requisitionSchema) }) })
 // Lieu exigé : un détail sans lieu ferait classer l'offre « hors Proparco » pour toujours (elle serait retenue comme vue).
@@ -86,6 +88,7 @@ export function requisitionToListing(requisition: Requisition): Listing {
     deadline: dayFromFrenchDate(requisition.postingExpirationDate ?? undefined),
     location: location || undefined,
     details: [],
+    description: requisition.externalDescription ? htmlToText(requisition.externalDescription) : undefined,
   }
 }
 
@@ -137,8 +140,8 @@ export class ProparcoSource implements ListingSource {
         listings.push(requisitionToListing(requisition))
         continue
       }
-      // Déjà vue, ou première lecture (rien n'est annoncé) : inutile de demander le détail.
-      if (context.firstRun || context.isKnown(requisition.requisitionId)) {
+      // Déjà vue (envoyée si elle était de Proparco, écartée sinon) : inutile de redemander le détail.
+      if (context.isKnown(requisition.requisitionId)) {
         ignoredIds.push(requisition.requisitionId)
         continue
       }

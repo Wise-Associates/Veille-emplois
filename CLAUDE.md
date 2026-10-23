@@ -21,7 +21,12 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
 - **Respecter les conditions d'usage des sites** (ADR 0001) : API et flux officiels d'abord ; pages publiques
   seulement si robots.txt les autorise ; User-Agent `veille-marches-emplois` ; jamais se faire passer pour un
   navigateur, contourner un blocage ou lire PLACE / lasecurecrute.fr (interdits sans autorisation écrite).
-- L'`id` d'une source est sa clé dans le fichier d'état : ne jamais le renommer.
+- L'`id` d'une source est sa clé dans le fichier d'état : ne jamais le renommer (toutes ses offres en ligne
+  repartiraient vers la boîte AO).
+- Une offre par e-mail vers la boîte AO de MyBestConsultant (ADR 0003) : garder les libellés de
+  `src/digest/offer-email.ts` (« Client », « Lieu », « Date limite… »), lus par sa consigne d'extraction. Une offre
+  n'est retenue comme envoyée qu'après acceptation par le serveur SMTP (`forgetUnsent`).
+- `npm run veille:local` envoie réellement : pour tester, une boîte de test dans `OFFERS_TO`.
 - Les liens d'offres présentés dans l'e-mail doivent pointer vers le site de l'organisme : chaque source vérifie
   l'hôte et lève une erreur sinon (lien d'hameçonnage depuis un site compromis).
 - Une offre « hors périmètre » n'est mise dans `ignoredIds` (retenue comme vue pour toujours) que sur une réponse
@@ -30,6 +35,7 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
   une liste vide ; valider les réponses JSON avec zod (`HttpClient.json`).
 - Toute règle de reconnaissance d'acheteur (`src/organisations.ts`) s'accompagne d'un cas dans
   `src/tenders/buyer-match.spec.ts`, y compris les homonymes à écarter.
-- Le workflow `veille-quotidienne.yml` n'utilise que des secrets et l'entrée booléenne `essai`, passés par `env:`.
+- Le workflow `veille-quotidienne.yml` n'utilise que des secrets, la variable `MAX_OFFER_EMAILS_PER_RUN` et l'entrée
+  booléenne `essai`, tous passés par `env:` (jamais `${{ }}` dans un script).
   Le job qui exécute le code (`passage`) garde un jeton en lecture seule ; seul `enregistrer`, qui n'exécute que git,
   peut écrire. Actions épinglées par SHA (version en commentaire).

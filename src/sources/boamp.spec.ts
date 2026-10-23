@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { boampBuyers, boampRecordToListing, boampWhere, extractBoampBuyers, type BoampRecord } from './boamp.source.js'
+import { boampBuyers, boampDescription, boampRecordToListing, boampWhere, extractBoampBuyers, type BoampRecord } from './boamp.source.js'
 
 // Avis fictifs, construits sur la structure réelle des données BOAMP (octobre 2026).
 const eforms = (organizations: { id: string; name: string; siret: string }[], buyerIds: string[]) => ({
@@ -77,6 +77,31 @@ describe('avis du BOAMP', () => {
     assert.ok(!JSON.stringify(listing).includes('DUPONT'), 'aucune donnée personnelle reprise')
   })
 
+  it('reprend l\'objet détaillé et les lots d\'un avis, jamais ses contacts', () => {
+    const mapa = {
+      MAPA: {
+        organisme: { correspondantPRM: { nom: 'DUPONT' }, acheteurPublic: 'A.S.P.' },
+        initial: {
+          description: { objet: 'Rénovation fictive du site régional' },
+          caracteristiques: { principales: 'Prix révisable' },
+          lots: { lot: [{ description: 'lot 1 : Maçonnerie fictive' }, { description: 'Peinture fictive' }] },
+        },
+      },
+    }
+    assert.deepEqual(boampDescription(mapa), {
+      description: 'Rénovation fictive du site régional\n\nPrix révisable\n\nLots\n- Lot 1 : Maçonnerie fictive\n- Lot 2 : Peinture fictive',
+      location: undefined,
+    })
+    const eformsWithText = eforms([{ id: 'ORG-0001', name: 'INSEE', siret: '12002701600563' }], ['ORG-0001'])
+    const root = eformsWithText.EFORMS.ContractNotice as Record<string, unknown>
+    root['cac:ProcurementProject'] = {
+      'cbc:Description': { '#text': 'Prestations fictives de maquettage' },
+      'cac:RealizedLocation': { 'cbc:Description': { '#text': 'Montrouge' } },
+    }
+    root['cac:ProcurementProjectLot'] = [{ 'cac:ProcurementProject': { 'cbc:Name': { '#text': 'Lot fictif' } } }]
+    assert.deepEqual(boampDescription(eformsWithText), { description: 'Prestations fictives de maquettage\n\nLots\n- Lot 1 : Lot fictif', location: 'Montrouge' })
+  })
+
   it('signale un avis au contenu illisible au lieu de perdre en silence la reconnaissance par SIRET', () => {
     assert.equal(boampBuyers(record({ nomacheteur: 'Direction fictive', donnees: '{"tronqué' })).unreadable, true)
     assert.equal(boampBuyers(record({ nomacheteur: 'Direction fictive', donnees: '{"NOUVEAU_FORMAT":{}}' })).unreadable, true)
@@ -86,7 +111,9 @@ describe('avis du BOAMP', () => {
 
   it('présente l\'avis avec son acheteur, son type, sa procédure et l\'identifiant commun avec TED', () => {
     const donnees = eforms([{ id: 'ORG-0001', name: 'INSEE', siret: '12002701600563' }], ['ORG-0001'])
-    const listing = boampRecordToListing(record({ nomacheteur: 'INSEE', donnees: JSON.stringify(donnees), contractfolderid: 'proc-fictive' }))
+    const listing = boampRecordToListing(
+      record({ nomacheteur: 'INSEE', donnees: JSON.stringify(donnees), contractfolderid: 'proc-fictive', code_departement: ['92'] }),
+    )
     assert.deepEqual(listing, {
       kind: 'tender',
       id: '26-000001',
@@ -96,13 +123,18 @@ describe('avis du BOAMP', () => {
       publishedOn: '2026-10-20',
       deadline: '2026-11-19T11:00:00+00:00',
       details: ['BOAMP', 'Acheteur : INSEE', 'Services', 'Procédure ouverte', 'Marchés européens'],
+      location: 'Département(s) 92',
+      description: undefined,
       procedureId: 'proc-fictive',
     })
   })
 
-  it('ne demande que les nouveaux avis de marché, et les achats SPM seulement s\'ils citent la DINUM', () => {
-    const where = boampWhere('2026-10-15')
-    assert.match(where, /^dateparution>=date'2026-10-15' AND nature="APPEL_OFFRE" AND etat="INITIAL" AND \(/)
+  it('ne demande que les avis de marché encore ouverts, et les achats SPM seulement s\'ils citent la DINUM', () => {
+    const where = boampWhere('2026-06-24', '2026-10-22')
+    assert.match(
+      where,
+      /^dateparution>=date'2026-06-24' AND \(datelimitereponse>=date'2026-10-22' OR datelimitereponse is null\) AND nature="APPEL_OFFRE" AND etat="INITIAL" AND \(/,
+    )
     assert.ok(where.includes('search(donnees,"180035016*")'))
     assert.ok(where.includes('nomacheteur like "agence des participations de l etat"'))
     assert.ok(where.includes('((nomacheteur like "services du premier ministre"'))

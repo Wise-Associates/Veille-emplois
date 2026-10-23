@@ -6,6 +6,10 @@ export interface RssItem {
   guid?: string
   pubDate?: string
   categories: string[]
+  /** Contenu HTML de <description>. */
+  description?: string
+  /** Contenu HTML complet de <content:encoded> (WordPress), plus riche que <description>. */
+  content?: string
 }
 
 /** Éléments d'un flux RSS 2.0, textes décodés (entités HTML comprises). */
@@ -27,6 +31,8 @@ export function parseRssItems(xml: string): RssItem[] {
           .toArray()
           .map((category) => $(category).text().trim())
           .filter(Boolean),
+        description: field('description'),
+        content: field('content\\:encoded'),
       }
     })
 }

@@ -38,7 +38,7 @@ export function createSources(http: HttpClient, clock: Clock): ListingSource[] {
     csp('autorite-concurrence', 'Autorité de la concurrence', ['24', '13385']),
     new AutoriteConcurrenceSource(http),
     new BanquePostaleSource(http),
-    new RssCareersSource(http, 'sfil-carrieres', 'SFIL — site carrières', 'sfil', 'https://sfil.fr/offres-emploi/feed/'),
+    new RssCareersSource(http, 'sfil-carrieres', 'SFIL — site carrières', 'sfil', 'https://sfil.fr/offres-emploi/feed/', { readOfferPage: false }),
     new CrhSource(http),
     new ProparcoSource(http),
     // limit=200 : maximum accepté par le flux (20 sinon).
@@ -48,6 +48,7 @@ export function createSources(http: HttpClient, clock: Clock): ListingSource[] {
       'Expertise France — site carrières',
       'expertise-france',
       'https://expertise-france.gestmax.fr/feed/rss/lang/fr_FR?limit=200',
+      { readOfferPage: true },
     ),
   ]
 }

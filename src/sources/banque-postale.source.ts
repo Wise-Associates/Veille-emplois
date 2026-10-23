@@ -1,11 +1,12 @@
 // Offres de La Banque Postale, lues sur les pages de son site carrières (offres issues de SAP SuccessFactors).
 // Il n'existe ni flux ni API publique : la liste est découpée en pages de 4 offres, que le site sert sous forme de
-// fragments HTML. robots.txt autorise ces pages.
+// fragments HTML ; le texte de chaque offre est sur sa page, lue au moment de l'envoyer. robots.txt autorise ces pages.
 
 import { setTimeout as sleep } from 'node:timers/promises'
 import * as cheerio from 'cheerio'
-import type { HttpClient } from '../http/http-client.js'
-import type { Listing, ListingSource, SourceBatch } from '../listing.js'
+import { OFFER_PAGE_REQUEST, type HttpClient } from '../http/http-client.js'
+import type { Listing, ListingDetails, ListingSource, SourceBatch } from '../listing.js'
+import { limitText } from '../text.js'
 
 const SITE = 'https://www.labanquepostale.com'
 const PAGE_URL = (page: number) => `${SITE}/candidats/offres-d-emploi/nos-offres-d-emploi/_jcr_content/jobofferlist.p-${page}.html`
@@ -56,6 +57,23 @@ export function parseBanquePostalePage(html: string): BanquePostalePage {
   return { listings, pageCount }
 }
 
+/** Sections de la page d'une offre reprises ; « Introduction » (présentation de la banque, la même partout) est omise. */
+const OFFER_SECTIONS = ["Description de l'offre", 'Informations complémentaires']
+
+/** Texte d'une offre, lu sur sa page : erreur si aucune section attendue n'est trouvée (page modifiée ou bloquée). */
+export function parseBanquePostaleOfferPage(html: string): ListingDetails {
+  const $ = cheerio.load(html)
+  const sections = $('.o-jobOffer-details__content')
+    .toArray()
+    .map((element) => ({
+      title: $(element).find('.o-jobOffer-details__content__title').first().text().replace(/\s+/g, ' ').trim(),
+      body: $(element).find('.o-jobOffer-details__content__desc').first().text(),
+    }))
+    .filter((section) => OFFER_SECTIONS.includes(section.title) && section.body.trim())
+  if (!sections.length) throw new Error("Texte de l'offre introuvable sur sa page (page modifiée ou bloquée).")
+  return { description: limitText(sections.map((section) => `${section.title}\n${section.body}`).join('\n\n')) }
+}
+
 export class BanquePostaleSource implements ListingSource {
   readonly id = 'banque-postale-carrieres'
   readonly label = 'La Banque Postale — site carrières'
@@ -81,5 +99,9 @@ export class BanquePostaleSource implements ListingSource {
       for (const listing of current.listings) listings.set(listing.id, listing)
     }
     return { listings: [...listings.values()], ignoredIds: [] }
+  }
+
+  async describe(listing: Listing): Promise<ListingDetails> {
+    return parseBanquePostaleOfferPage(await this.http.text(listing.url, OFFER_PAGE_REQUEST))
   }
 }

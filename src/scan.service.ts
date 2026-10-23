@@ -2,14 +2,46 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { CLOCK, type Clock } from './clock.js'
 import { APP_CONFIG, type AppConfig } from './config.js'
 import { parisDay } from './dates.js'
-import { renderDigest } from './digest/digest.js'
-import type { ListingSource } from './listing.js'
-import { Mailer } from './mail/mailer.js'
+import { renderDigest, type DeliverySummary } from './digest/digest.js'
+import { renderOfferEmail } from './digest/offer-email.js'
+import type { Listing, ListingDetails, ListingSource } from './listing.js'
+import { isMessageRejection, Mailer } from './mail/mailer.js'
 import { LISTING_SOURCES } from './sources/sources.js'
-import { applyRun, type RunReport, type SourceOutcome, type VeilleState } from './state/run-state.js'
+import {
+  applyRun,
+  forgetUnsent,
+  sendingOrder,
+  type NewListing,
+  type RunReport,
+  type SourceOutcome,
+  type VeilleState,
+} from './state/run-state.js'
 import { StateStore } from './state/state-store.js'
 
-/** Un passage de la veille : lire les sources, repérer les nouveautés, envoyer le récapitulatif, retenir l'état. */
+/**
+ * Passage terminé avec l'état enregistré, mais un envoi a échoué (offres ou récapitulatif) : le workflow doit
+ * quand même pousser l'état (les offres envoyées ne doivent pas repartir), puis signaler l'échec (code de sortie 3).
+ */
+export class PartialDeliveryError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PartialDeliveryError'
+  }
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+/**
+ * Durée au-delà de laquelle plus aucune offre n'est commencée. Le job GitHub est tué à 40 minutes (installation et
+ * compilation comprises) ; 25 minutes laissent la marge d'enregistrer l'état et d'envoyer le récapitulatif.
+ */
+export const RUN_TIME_BUDGET_MS = 25 * 60_000
+const MAX_CONSECUTIVE_PAGE_FAILURES = 3
+
+/**
+ * Un passage de la veille : lire les sources, envoyer chaque nouvelle offre dans son propre e-mail à la boîte AO,
+ * retenir ce qui a été envoyé, puis envoyer le récapitulatif à l'équipe.
+ */
 @Injectable()
 export class ScanService {
   private readonly logger = new Logger(ScanService.name)
@@ -22,7 +54,8 @@ export class ScanService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async run(): Promise<RunReport> {
+  async run(): Promise<DeliverySummary> {
+    const startedAt = this.clock.now().getTime()
     const state = await this.store.load()
     const outcomes: SourceOutcome[] = []
     // Une source après l'autre : quelques minutes au total, et jamais plusieurs requêtes simultanées vers un même site.
@@ -30,35 +63,171 @@ export class ScanService {
 
     const today = parisDay(this.clock.now())
     const { report, next } = applyRun(state, outcomes, today)
-    const digest = renderDigest(report, today)
+    const batch = sendingOrder(report.newListings).slice(0, this.config.maxOfferEmailsPerRun)
     this.logger.log(
-      `${report.newListings.length} nouvelle(s) annonce(s), ${report.failures.length} source(s) en échec, ` +
-        `${report.warnings.length} avertissement(s), ${report.initialised.length} source(s) initialisée(s).`,
+      `${report.newListings.length} nouvelle(s) annonce(s), ${batch.length} à envoyer dans ce passage ; ` +
+        `${report.failures.length} source(s) en échec, ${report.warnings.length} avertissement(s).`,
     )
 
-    if (this.config.dryRun) {
-      this.logger.log(`Essai : rien n'est envoyé ni enregistré. Récapitulatif qui serait envoyé :\n\n${digest.subject}\n\n${digest.text}`)
-      return report
+    if (this.config.dryRun) return this.preview(batch, report, today)
+
+    const details = new DetailReader()
+    const sent: NewListing[] = []
+    const refused: string[] = []
+    let deliveryError: string | null = null
+    for (const listing of batch) {
+      // Au-delà du budget de temps, le reste attend le passage suivant (comme au-delà du plafond) : un passage tué par
+      // le délai maximal du workflow n'enregistrerait rien, et renverrait le lendemain les offres déjà envoyées.
+      if (this.clock.now().getTime() - startedAt >= RUN_TIME_BUDGET_MS) {
+        this.logger.warn(`Budget de temps atteint après ${sent.length} offre(s) : le reste partira au passage suivant.`)
+        break
+      }
+      const complete = await this.complete(listing, details)
+      try {
+        await this.mailer.sendOffer(renderOfferEmail(complete))
+      } catch (error) {
+        if (isMessageRejection(error)) {
+          // Refus propre à ce message : les suivants partent quand même ; celui-ci sera retenté au passage suivant.
+          refused.push(`« ${listing.title.slice(0, 80)} » (${listing.organisationId}, ${listing.id}) : ${message(error)}`)
+          this.logger.error(`Offre ${listing.id} refusée par le serveur d'envoi : ${message(error)}`)
+          continue
+        }
+        // Le serveur d'envoi refuse tout (adresse, identifiants, quota…) : inutile d'insister.
+        deliveryError = message(error)
+        this.logger.error(`Envoi des offres interrompu après ${sent.length} : ${deliveryError}`, error instanceof Error ? error.stack : undefined)
+        break
+      }
+      sent.push(listing)
     }
-    // L'e-mail part avant l'enregistrement de l'état : si l'envoi échoue, les nouveautés seront annoncées au passage
-    // suivant. Dans l'autre ordre, elles seraient marquées comme vues sans avoir été envoyées.
-    await this.mailer.send(digest)
-    this.logger.log(`Récapitulatif envoyé : « ${digest.subject} ».`)
-    await this.store.save(next)
-    return report
+
+    // L'état ne retient que les offres réellement envoyées : les autres redeviennent nouvelles au passage suivant.
+    const sentSet = new Set(sent)
+    const unsent = report.newListings.filter((listing) => !sentSet.has(listing))
+    await this.store.save(forgetUnsent(next, unsent, state))
+    this.logger.log(`${sent.length} offre(s) envoyée(s) à la boîte AO, ${unsent.length} en attente ; état enregistré.`)
+
+    const summary: DeliverySummary = {
+      sent,
+      pending: unsent.length,
+      perRunLimit: this.config.maxOfferEmailsPerRun,
+      timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,
+      deliveryError,
+      failures: report.failures,
+      warnings: [
+        ...report.warnings,
+        ...details.warnings(),
+        ...refused.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Offre refusée, retentée au prochain passage : ${offer}` })),
+      ],
+    }
+    const digest = renderDigest(summary, today)
+    let digestError: string | null = null
+    try {
+      await this.mailer.sendDigest(digest)
+      this.logger.log(`Récapitulatif envoyé : « ${digest.subject} ».`)
+    } catch (error) {
+      digestError = message(error)
+    }
+    if (deliveryError || refused.length || digestError) {
+      throw new PartialDeliveryError(
+        [
+          deliveryError && `envoi des offres interrompu (${deliveryError})`,
+          refused.length && `${refused.length} offre(s) refusée(s) par le serveur d'envoi`,
+          digestError && `récapitulatif non envoyé (${digestError})`,
+        ]
+          .filter(Boolean)
+          .join(' ; '),
+      )
+    }
+    return summary
+  }
+
+  /** Essai : affiche le récapitulatif et le premier e-mail d'offre, complété comme il le serait ; rien n'est envoyé. */
+  private async preview(batch: NewListing[], report: RunReport, today: string): Promise<DeliverySummary> {
+    const summary: DeliverySummary = {
+      sent: batch,
+      pending: report.newListings.length - batch.length,
+      perRunLimit: this.config.maxOfferEmailsPerRun,
+      timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,
+      deliveryError: null,
+      failures: report.failures,
+      warnings: report.warnings,
+    }
+    const digest = renderDigest(summary, today)
+    const first = batch[0] ? renderOfferEmail(await this.complete(batch[0], new DetailReader())) : null
+    this.logger.log(
+      `Essai : rien n'est envoyé ni enregistré.\n\n=== Récapitulatif (équipe) ===\n${digest.subject}\n\n${digest.text}` +
+        (first ? `\n\n=== Premier des ${batch.length} e-mails d'offre (boîte AO) ===\n${first.subject}\n\n${first.text}` : ''),
+    )
+    return summary
+  }
+
+  /** Offre complétée par la page de l'offre, si sa source en a besoin. Un échec n'empêche pas l'envoi, il est signalé. */
+  private async complete(listing: NewListing, details: DetailReader): Promise<Listing> {
+    const source = this.sources.find((s) => s.id === listing.sourceId)
+    if (!source?.describe) return listing
+    if (details.abandoned(source.label)) {
+      details.failed(source.label)
+      return listing
+    }
+    try {
+      const found: ListingDetails = await source.describe(listing)
+      details.succeeded(source.label)
+      const defined = Object.fromEntries(Object.entries(found).filter(([, value]) => value !== undefined && value !== ''))
+      return { ...listing, ...defined }
+    } catch (error) {
+      this.logger.warn(`${source.label} : détail de l'offre ${listing.id} illisible — ${message(error)}`)
+      details.failed(source.label)
+      return listing
+    }
   }
 
   private async read(source: ListingSource, state: VeilleState): Promise<SourceOutcome> {
     const known = state.sources[source.id]
     const started = Date.now()
     try {
-      const batch = await source.fetch({ firstRun: !known, isKnown: (id) => known !== undefined && Object.hasOwn(known.seen, id) })
+      const batch = await source.fetch({ isKnown: (id) => known !== undefined && Object.hasOwn(known.seen, id) })
       this.logger.log(`${source.label} : ${batch.listings.length} annonce(s) retenue(s), ${batch.ignoredIds.length} hors périmètre (${Date.now() - started} ms).`)
       return { sourceId: source.id, label: source.label, kind: source.kind, ok: true, batch }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.logger.error(`${source.label} : lecture impossible — ${message}`, error instanceof Error ? error.stack : undefined)
-      return { sourceId: source.id, label: source.label, kind: source.kind, ok: false, error: message }
+      this.logger.error(`${source.label} : lecture impossible — ${message(error)}`, error instanceof Error ? error.stack : undefined)
+      return { sourceId: source.id, label: source.label, kind: source.kind, ok: false, error: message(error) }
     }
+  }
+}
+
+/**
+ * Suivi des lectures de pages d'offres pendant l'envoi, par source. Après quelques échecs de suite (site en panne ou
+ * page modifiée), la source n'est plus lue pendant ce passage : ses offres partent sans le détail, sans attendre
+ * chaque fois la fin du délai.
+ */
+class DetailReader {
+  private readonly bySource = new Map<string, { failed: number; consecutive: number }>()
+
+  abandoned(label: string): boolean {
+    return (this.bySource.get(label)?.consecutive ?? 0) >= MAX_CONSECUTIVE_PAGE_FAILURES
+  }
+
+  succeeded(label: string): void {
+    const entry = this.bySource.get(label)
+    if (entry) entry.consecutive = 0
+  }
+
+  failed(label: string): void {
+    const entry = this.bySource.get(label) ?? { failed: 0, consecutive: 0 }
+    entry.failed++
+    entry.consecutive++
+    this.bySource.set(label, entry)
+  }
+
+  warnings(): { label: string; message: string }[] {
+    return [...this.bySource]
+      .filter(([, entry]) => entry.failed > 0)
+      .map(([label, entry]) => ({
+        label,
+        message:
+          `${entry.failed} offre(s) envoyée(s) sans le détail de leur page (lecture impossible` +
+          `${entry.consecutive >= MAX_CONSECUTIVE_PAGE_FAILURES ? `, abandonnée après ${MAX_CONSECUTIVE_PAGE_FAILURES} échecs de suite` : ''}) : ` +
+          'la page a peut-être changé.',
+      }))
   }
 }

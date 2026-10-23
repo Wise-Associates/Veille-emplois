@@ -27,6 +27,7 @@ describe('avis TED', () => {
       publishedOn: '2026-10-19',
       deadline: '2026-11-16',
       details: ["TED (Journal officiel de l'UE)", 'Acheteur : EXPERTISE FRANCE', 'Procédure ouverte'],
+      description: undefined,
       procedureId: 'proc-fictive',
     })
   })
@@ -52,9 +53,12 @@ describe('avis TED', () => {
     assert.equal(tedName('a s p'), null)
   })
 
-  it('ne demande que les mises en concurrence françaises, sans rectificatifs', () => {
-    const query = tedQuery('2026-10-15')
-    assert.match(query, /^buyer-country=FRA AND publication-date>=20261015 AND form-type=competition AND NOT change-notice-version-identifier=\* AND \(/)
+  it('ne demande que les mises en concurrence françaises encore ouvertes, sans rectificatifs', () => {
+    const query = tedQuery('2026-06-24', '2026-10-22')
+    assert.match(
+      query,
+      /^buyer-country=FRA AND publication-date>=20260624 AND deadline-receipt-tender-date-lot>=20261022 AND form-type=competition AND NOT change-notice-version-identifier=\* AND \(/,
+    )
     assert.ok(query.includes('180035016*'))
     assert.ok(query.includes('buyer-name~proparco*'))
     assert.ok(query.includes('buyer-name~"autorite de la concurrence"'))

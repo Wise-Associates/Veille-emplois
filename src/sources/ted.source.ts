@@ -8,7 +8,8 @@ import type { HttpClient } from '../http/http-client.js'
 import type { Listing, ListingSource, SourceBatch } from '../listing.js'
 import { ORGANISATIONS, type Organisation } from '../organisations.js'
 import { matchOrganisation } from '../tenders/buyer-match.js'
-import { LOOKBACK_DAYS } from './boamp.source.js'
+import { limitText } from '../text.js'
+import { PUBLICATION_LOOKBACK_DAYS } from './boamp.source.js'
 
 const API_URL = 'https://api.ted.europa.eu/v3/notices/search'
 const PAGE_SIZE = 250
@@ -85,8 +86,11 @@ export function tedName(phrase: string): string | null {
   return words.length === 1 ? (words[0] ?? null) : `"${words.join(' ').replaceAll('*', '')}"`
 }
 
-/** Requête experte TED : avis de mise en concurrence (ni résultats ni rectificatifs) des organismes suivis. */
-export function tedQuery(since: string, organisations: readonly Organisation[] = ORGANISATIONS): string {
+/**
+ * Requête experte TED : avis de mise en concurrence (ni résultats ni rectificatifs) des organismes suivis, publiés
+ * depuis `since` et dont un lot au moins est encore ouvert le jour `today`.
+ */
+export function tedQuery(since: string, today: string, organisations: readonly Organisation[] = ORGANISATIONS): string {
   const sirens = organisations.flatMap((o) => o.tenderRules.flatMap((rule) => (rule.requiredText ? [] : (rule.sirens ?? []))))
   const clauses = [`buyer-identifier IN (${sirens.map((siren) => `${siren}*`).join(' ')})`]
   for (const organisation of organisations) {
@@ -99,10 +103,10 @@ export function tedQuery(since: string, organisations: readonly Organisation[] =
       clauses.push(rule.requiredText ? `((${byName}) AND (${texts.map((text) => `FT~${text}`).join(' OR ')}))` : byName)
     }
   }
-  const day = since.replaceAll('-', '')
+  const compact = (day: string) => day.replaceAll('-', '')
   return (
-    `buyer-country=FRA AND publication-date>=${day} AND form-type=competition ` +
-    `AND NOT change-notice-version-identifier=* AND (${clauses.join(' OR ')})`
+    `buyer-country=FRA AND publication-date>=${compact(since)} AND deadline-receipt-tender-date-lot>=${compact(today)} ` +
+    `AND form-type=competition AND NOT change-notice-version-identifier=* AND (${clauses.join(' OR ')})`
   )
 }
 
@@ -138,6 +142,7 @@ export function tedNoticeToListing(notice: TedNotice, organisations: readonly Or
       ...(buyerName ? [`Acheteur : ${buyerName}`] : []),
       ...(procedure ? [PROCEDURE_TYPES[procedure] ?? procedure] : []),
     ],
+    description: description ? limitText(description) : undefined,
     procedureId: values(notice['procedure-identifier'])[0],
   }
 }
@@ -153,10 +158,11 @@ export class TedSource implements ListingSource {
   ) {}
 
   async fetch(): Promise<SourceBatch> {
-    const query = tedQuery(addDays(parisDay(this.now()), -LOOKBACK_DAYS))
+    const today = parisDay(this.now())
+    const query = tedQuery(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today)
     const notices: TedNotice[] = []
     for (let page = 1; ; page++) {
-      if (page > MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis TED sur ${LOOKBACK_DAYS} jours : requête à vérifier.`)
+      if (page > MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis TED ouverts : requête à vérifier.`)
       const response = await this.http.json(API_URL, responseSchema, {
         json: { query, fields: FIELDS, page, limit: PAGE_SIZE, scope: 'ALL', checkQuerySyntax: false, paginationMode: 'PAGE_NUMBER' },
       })
@@ -164,8 +170,8 @@ export class TedSource implements ListingSource {
       if (notices.length >= response.totalNoticeCount) break
       if (response.notices.length === 0) throw new Error(`Page vide après ${notices.length} avis sur ${response.totalNoticeCount} annoncés.`)
     }
-    // Les avis d'autres acheteurs ne sont pas retenus comme vus : la fenêtre de 7 jours est relue à chaque passage, et
-    // une règle d'organisme corrigée doit pouvoir rattraper les avis de la semaine.
+    // Les avis d'autres acheteurs ne sont pas retenus comme vus : les avis ouverts sont relus à chaque passage, et
+    // une règle d'organisme corrigée doit pouvoir rattraper les avis encore ouverts.
     return { listings: notices.map((notice) => tedNoticeToListing(notice)).filter((l): l is Listing => l !== null), ignoredIds: [] }
   }
 }

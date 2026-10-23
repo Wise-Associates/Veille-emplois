@@ -9,7 +9,7 @@ import { StateStore } from './state-store.js'
 
 const storeIn = async (file = 'etat/etat.json') => {
   const dir = await mkdtemp(join(tmpdir(), 'veille-etat-'))
-  const config: AppConfig = { stateFile: join(dir, file), dryRun: false, mail: null }
+  const config: AppConfig = { stateFile: join(dir, file), dryRun: false, maxOfferEmailsPerRun: 200, mail: null }
   return { store: new StateStore(config), path: config.stateFile }
 }
 

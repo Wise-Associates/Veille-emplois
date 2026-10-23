@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Listing } from '../listing.js'
-import { applyRun, EMPTY_STATE, type SourceOutcome, type VeilleState } from './run-state.js'
+import { applyRun, EMPTY_STATE, forgetUnsent, type SourceOutcome, type VeilleState } from './run-state.js'
 
 const today = '2026-10-22'
 
@@ -38,10 +38,9 @@ const stateWith = (sourceId: string, seen: Record<string, string>, lastCount = O
 })
 
 describe('repérage des nouvelles annonces', () => {
-  it('enregistre sans les annoncer les annonces d\'une source lue pour la première fois', () => {
+  it('annonce toutes les annonces d\'une source lue pour la première fois, avec leur source', () => {
     const { report, next } = applyRun(EMPTY_STATE, [ok('csp-dinum', [job('A'), job('B')], ['X'])], today)
-    assert.deepEqual(report.newListings, [])
-    assert.deepEqual(report.initialised, [{ label: 'Source csp-dinum', count: 3 }])
+    assert.deepEqual(report.newListings.map((l) => `${l.sourceId}/${l.id}`), ['csp-dinum/A', 'csp-dinum/B'])
     assert.deepEqual(next.sources['csp-dinum']?.seen, { A: today, B: today, X: today })
   })
 
@@ -140,6 +139,34 @@ describe('repérage des nouvelles annonces', () => {
     }
     const { report } = applyRun(stateWith('boamp', {}), [outcome], today)
     assert.deepEqual(report.warnings, [{ label: 'Source boamp', message: '2 avis illisibles' }])
+  })
+
+  it('rend « nouvelles » les annonces non envoyées, pour le passage suivant', () => {
+    const state = stateWith('boamp', { ancien: '2026-10-01' })
+    const { report, next } = applyRun(state, [ok('boamp', [tender('ancien', 'p0'), tender('26-1', 'p1'), tender('26-2', 'p2')], [], 'tender')], today)
+    const unsent = report.newListings.filter((l) => l.id === '26-2')
+    const kept = forgetUnsent(next, unsent, state)
+    assert.deepEqual(Object.keys(kept.sources['boamp']?.seen ?? {}).sort(), ['26-1', 'ancien'])
+    assert.deepEqual(Object.keys(kept.procedures).sort(), ['p1'], 'p0 : annonce déjà vue, p2 : non envoyée')
+    const tomorrow = applyRun(kept, [ok('boamp', [tender('26-1', 'p1'), tender('26-2', 'p2')], [], 'tender')], '2026-10-23')
+    assert.deepEqual(tomorrow.report.newListings.map((l) => l.id), ['26-2'])
+  })
+
+  it('ne perd pas une offre non envoyée dont la procédure venait d\'expirer', () => {
+    // Procédure annoncée il y a exactement 120 jours : oubliée aujourd'hui, puis reposée par un nouvel avis non envoyé.
+    const state: VeilleState = { ...stateWith('boamp', {}), procedures: { P: '2026-06-23' } }
+    const { report, next } = applyRun(state, [ok('boamp', [tender('N2', 'P')], [], 'tender')], today)
+    const kept = forgetUnsent(next, report.newListings, state)
+    assert.equal(Object.hasOwn(kept.procedures, 'P'), false)
+    const tomorrow = applyRun(kept, [ok('boamp', [tender('N2', 'P')], [], 'tender')], '2026-10-23')
+    assert.deepEqual(tomorrow.report.newListings.map((l) => l.id), ['N2'])
+  })
+
+  it('ne retire jamais une annonce que l\'état connaissait déjà', () => {
+    const state = stateWith('csp-dinum', { A: '2026-10-01' })
+    const { next } = applyRun(state, [ok('csp-dinum', [job('A')])], today)
+    const kept = forgetUnsent(next, [{ ...job('A'), sourceId: 'csp-dinum' }], state)
+    assert.deepEqual(kept.sources['csp-dinum']?.seen, { A: '2026-10-01' })
   })
 
   it('oublie les procédures annoncées depuis plus de 120 jours', () => {

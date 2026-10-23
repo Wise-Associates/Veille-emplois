@@ -4,6 +4,7 @@
 import { z } from 'zod'
 import type { HttpClient } from '../http/http-client.js'
 import type { Listing, ListingSource, SourceBatch } from '../listing.js'
+import { htmlToText } from '../text.js'
 
 const LIST_URL = 'https://autoritedelaconcurrence.nos-recrutements.fr/api/job/list'
 const PAGE_SIZE = 100
@@ -16,6 +17,8 @@ const jobSchema = z.object({
   creationDate: z.string().nullish(),
   city: z.string().nullish(),
   contractType: z.string().nullish(),
+  descriptionMission: z.string().nullish(),
+  descriptionProfile: z.string().nullish(),
 })
 const responseSchema = z.object({ numFound: z.number().int(), jobs: z.array(jobSchema) })
 
@@ -36,7 +39,17 @@ export function beetweenJobToListing(job: BeetweenJob): Listing {
     publishedOn: job.creationDate?.match(/^\d{4}-\d{2}-\d{2}/)?.[0],
     location: job.city ?? undefined,
     details: job.contractType ? [job.contractType] : [],
+    description: describeJob(job),
   }
+}
+
+/** Missions puis profil recherché ; la présentation de l'Autorité, identique pour toutes les offres, est omise. */
+function describeJob(job: BeetweenJob): string | undefined {
+  const parts = [
+    job.descriptionMission ? `Missions\n${htmlToText(job.descriptionMission)}` : '',
+    job.descriptionProfile ? `Profil recherché\n${htmlToText(job.descriptionProfile)}` : '',
+  ].filter(Boolean)
+  return parts.length ? parts.join('\n\n') : undefined
 }
 
 export class AutoriteConcurrenceSource implements ListingSource {
