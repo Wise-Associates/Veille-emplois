@@ -25,19 +25,22 @@ Proparco, Expertise France.
    en ligne ; pour les appels d'offres, ce sont **tous les avis encore ouverts** (date limite de réponse non passée,
    publiés depuis 120 jours) : le premier passage envoie tout ce à quoi on peut encore répondre, et un passage manqué
    est rattrapé tant que l'avis est ouvert.
-4. Chaque nouvelle offre part dans **son propre e-mail** vers la boîte AO (`OFFERS_TO`) : intitulé, client
+4. Seules les offres **informatiques** sont envoyées (voir « Périmètre informatique ») : les autres sont retenues
+   comme vues, jamais envoyées, et comptées dans le récapitulatif (« hors projets informatiques »).
+5. Chaque nouvelle offre part dans **son propre e-mail** vers la boîte AO (`OFFERS_TO`) : intitulé, client
    (l'organisme), lieu, précisions, dates, référence, lien, puis le texte complet. Quand la liste de la source ne
    donne pas tout, la page de l'offre est lue au moment de l'envoyer (Choisir le service public : employeur exact et
    date limite ; Expertise France et La Banque Postale : texte de l'offre).
-5. Au plus `MAX_OFFER_EMAILS_PER_RUN` offres par passage (200 par défaut), une par seconde, et aucune nouvelle offre
-   commencée après 25 minutes de passage ; appels d'offres d'abord. Les autres attendent le passage suivant. **Le premier passage** trouve toutes les offres en ligne (environ 750) :
-   elles partent sur plusieurs jours, ou plus vite en relançant le workflow à la main.
-6. Une offre dont la date limite est déjà passée (souvent connue par la page de l'offre) n'est pas envoyée ; elle est
+6. Au plus `MAX_OFFER_EMAILS_PER_RUN` offres par passage (200 par défaut), une par seconde, et aucune nouvelle offre
+   commencée après 25 minutes de passage ; appels d'offres d'abord. Les autres attendent le passage suivant.
+   **Le premier passage** trouve toutes les offres informatiques en ligne (environ 150 en octobre 2026) : elles
+   partent en un ou deux passages, ou plus vite en relançant le workflow à la main.
+7. Une offre dont la date limite est déjà passée (souvent connue par la page de l'offre) n'est pas envoyée ; elle est
    retenue comme traitée et comptée dans le récapitulatif.
-7. Une offre n'est retenue comme envoyée qu'une fois son e-mail accepté par le serveur : si le serveur refuse
+8. Une offre n'est retenue comme envoyée qu'une fois son e-mail accepté par le serveur : si le serveur refuse
    (quota, adresse), l'envoi s'arrête et le reste part au passage suivant ; s'il refuse un seul message (contenu),
    celui-ci est sauté, signalé, et retenté au passage suivant.
-8. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`) : offres envoyées, offres en attente, points à
+9. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`) : offres envoyées, offres en attente, points à
    vérifier. Le passage de 5 h l'envoie **toujours, même sans nouveauté** (son arrivée prouve que la veille tourne) ;
    ceux de 9 h, 13 h et 17 h seulement s'il y a un point à vérifier (`DIGEST_MODE`).
 
@@ -56,6 +59,34 @@ Dans MyBestConsultant, chaque e-mail d'offre porte l'en-tête `X-Wise-Veille: sc
 « Scraping » dans la colonne « Source » (au lieu de « E-mails AO »), écarte une offre échue, et dédoublonne avec les
 offres reçues par ailleurs (même intitulé, client, ville et contrat sur 60 jours). L'en-tête n'est reconnu que si
 l'expéditeur est d'un domaine de l'organisation (voir l'ADR 0008 de MyBestConsultant).
+
+## Périmètre informatique
+
+Décision du 23/10/2026 ([docs/adr/0004-perimetre-informatique.md](docs/adr/0004-perimetre-informatique.md)), règles
+dans `src/it-scope.ts` :
+
+- **Appels d'offres** : services informatiques et logiciels, d'après la classification européenne de l'avis (CPV 72
+  « services informatiques », CPV 48 « logiciels et systèmes d'information ») ou les descripteurs du BOAMP
+  (« Informatique (prestations de services) », « Logiciel »). Hors périmètre : matériel (CPV 30), maintenance (50),
+  télécommunications (64), travaux (45), même pour un intitulé informatique. Un avis sans aucune classification
+  (petits avis) est jugé sur son intitulé.
+- **Offres d'emploi** : métiers techniques, données / IA / cybersécurité, projets informatiques et SI métier (MOA,
+  business analyst, ERP), métiers du numérique (UX/UI, web), d'après l'intitulé et la catégorie donnée par la source
+  (domaine « Numérique » de Choisir le service public, département d'Expertise France). Les sigles (SI, DSI, MOA…) ne
+  comptent qu'en majuscules ; les mots ambigus (réseau, architecte, infrastructure, application) seulement dans une
+  expression ; le vocabulaire du bâtiment (« travaux », « maîtrise d'ouvrage déléguée ») l'emporte.
+
+Mesure du 23/10/2026 sur les offres en ligne (TED injoignable ce jour-là) : 151 offres informatiques sur 782 (19 %).
+Limites connues : des offres d'Expertise France liées à un programme d'« économie numérique » passent sans être des
+métiers informatiques ; un intitulé sans aucun mot informatique (« Ingénieur d'études » sans précision, projet nommé
+par l'adresse de son site) est écarté.
+
+- **Ajuster les règles** : modifier `src/it-scope.ts`, ajouter le cas (y compris le faux positif à écarter) dans
+  `src/it-scope.spec.ts`, puis vérifier sur les offres réelles avec `npm run build && npm run veille:essai` (le
+  journal donne, par source, le nombre d'annonces informatiques et hors informatique).
+- **Élargir le périmètre** ne renvoie pas les offres déjà écartées : elles sont retenues comme vues. Pour les
+  rattraper, supprimer la clé de la source dans `sources` d'`etat.json` (voir « État de la veille ») : toutes ses
+  offres en ligne repartent, y compris celles déjà envoyées, que MyBestConsultant dédoublonne sur 60 jours.
 
 ## Prérequis
 
@@ -148,6 +179,7 @@ oubliée. Chaque passage ajoute un commit : l'historique montre l'état de n'imp
 | E-mail d'une offre (boîte AO) | `src/digest/offer-email.ts` |
 | Récapitulatif de l'équipe | `src/digest/digest.ts` |
 | Calcul des nouveautés, ordre d'envoi, alertes de volume | `src/state/run-state.ts` |
+| Périmètre informatique (codes CPV, expressions, sigles) | `src/it-scope.ts`, cas dans `src/it-scope.spec.ts` |
 
 Quand une source apparaît dans « Points à vérifier » plusieurs jours de suite, ouvrir sa page dans un navigateur,
 comparer avec ce qu'attend son fichier dans `src/sources/` (sélecteurs, champs JSON), adapter, puis vérifier avec
@@ -161,6 +193,7 @@ src/
   app.module.ts           assemblage des services
   scan.service.ts         un passage : lire, comparer, envoyer chaque offre, enregistrer, récapituler
   organisations.ts        organismes suivis et règles de reconnaissance des acheteurs
+  it-scope.ts             périmètre informatique (offres envoyées ou écartées)
   tenders/buyer-match.ts  reconnaissance de l'acheteur d'un avis
   sources/                une source par fichier (BOAMP, TED, Choisir le service public, sites carrières)
   state/                  calcul des nouveautés (règles pures) et fichier d'état

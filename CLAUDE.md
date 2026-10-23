@@ -31,10 +31,13 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
 - `npm run veille:local` envoie réellement : pour tester, une boîte de test dans `OFFERS_TO`.
 - Les liens d'offres présentés dans l'e-mail doivent pointer vers le site de l'organisme : chaque source vérifie
   l'hôte et lève une erreur sinon (lien d'hameçonnage depuis un site compromis).
-- Une offre « hors périmètre » n'est mise dans `ignoredIds` (retenue comme vue pour toujours) que sur une réponse
-  explicite de la source ; dans le doute, lever une erreur ou laisser l'offre inconnue.
+- Une offre d'un autre organisme (ex. AFD hors Proparco) n'est mise dans `ignoredIds` (retenue comme vue pour toujours)
+  que sur une réponse explicite de la source ; dans le doute, lever une erreur ou laisser l'offre inconnue.
 - Une source qui ne comprend plus la page **lève une erreur** (signalée dans le récapitulatif) au lieu de renvoyer
   une liste vide ; valider les réponses JSON avec zod (`HttpClient.json`).
+- Seules les offres informatiques sont envoyées (ADR 0004, `src/it-scope.ts`) : toute règle de périmètre s'accompagne
+  d'un cas dans `src/it-scope.spec.ts` (y compris le faux positif à écarter) et d'une vérification sur les offres
+  réelles (`npm run veille:essai`). Une offre écartée est retenue comme vue : élargir ne la renverra pas.
 - Toute règle de reconnaissance d'acheteur (`src/organisations.ts`) s'accompagne d'un cas dans
   `src/tenders/buyer-match.spec.ts`, y compris les homonymes à écarter.
 - Le workflow `veille-quotidienne.yml` n'utilise que des secrets, la variable `MAX_OFFER_EMAILS_PER_RUN`, l'entrée

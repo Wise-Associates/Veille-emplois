@@ -12,6 +12,8 @@ export interface DeliverySummary {
   sent: Listing[]
   /** Nouvelles offres non envoyées car leur date limite était déjà passée. */
   outdated: number
+  /** Nouvelles offres écartées car hors du périmètre informatique (it-scope.ts). */
+  outOfScope: number
   /** Nouvelles offres non envoyées (plafond du passage, envoi interrompu) : elles partiront aux passages suivants. */
   pending: number
   /** Nombre maximal d'offres envoyées par passage. */
@@ -79,8 +81,13 @@ function pendingLine(summary: DeliverySummary): string | null {
 }
 
 function outdatedLine(summary: DeliverySummary): string | null {
-  if (!summary.outdated) return null
-  return `${plural(summary.outdated, 'nouvelle offre écartée', 'nouvelles offres écartées')} : date limite déjà passée.`
+  const parts = [
+    ...(summary.outdated ? [`${plural(summary.outdated, 'nouvelle offre écartée', 'nouvelles offres écartées')} : date limite déjà passée.`] : []),
+    ...(summary.outOfScope
+      ? [`${plural(summary.outOfScope, 'nouvelle offre écartée', 'nouvelles offres écartées')} : hors projets informatiques.`]
+      : []),
+  ]
+  return parts.length ? parts.join(' ') : null
 }
 
 const INTRO = 'Chaque offre ci-dessous a été envoyée dans son propre e-mail à la boîte AO de MyBestConsultant.'

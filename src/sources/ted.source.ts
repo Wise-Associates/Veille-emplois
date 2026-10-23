@@ -26,6 +26,7 @@ const FIELDS = [
   'deadline-receipt-tender-date-lot',
   'procedure-type',
   'procedure-identifier',
+  'classification-cpv',
 ]
 
 /** Champ multilingue : { "fra": "…" } ou { "fra": ["…"] }. */
@@ -43,6 +44,7 @@ const noticeSchema = z.object({
   'deadline-receipt-tender-date-lot': oneOrMany.optional(),
   'procedure-type': oneOrMany.optional(),
   'procedure-identifier': oneOrMany.optional(),
+  'classification-cpv': oneOrMany.optional(),
 })
 const responseSchema = z.object({ notices: z.array(noticeSchema), totalNoticeCount: z.number().int() })
 
@@ -144,6 +146,7 @@ export function tedNoticeToListing(notice: TedNotice, organisations: readonly Or
     ],
     description: description ? limitText(description) : undefined,
     procedureId: values(notice['procedure-identifier'])[0],
+    ...(values(notice['classification-cpv']).length ? { cpv: [...new Set(values(notice['classification-cpv']))] } : {}),
   }
 }
 

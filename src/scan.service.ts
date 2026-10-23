@@ -4,6 +4,7 @@ import { APP_CONFIG, type AppConfig } from './config.js'
 import { parisDay } from './dates.js'
 import { needsAttention, renderDigest, type DeliverySummary } from './digest/digest.js'
 import { renderOfferEmail } from './digest/offer-email.js'
+import { scopeToIt } from './it-scope.js'
 import type { Listing, ListingDetails, ListingSource } from './listing.js'
 import { isMessageRejection, Mailer } from './mail/mailer.js'
 import { LISTING_SOURCES } from './sources/sources.js'
@@ -59,7 +60,12 @@ export class ScanService {
     const state = await this.store.load()
     const outcomes: SourceOutcome[] = []
     // Une source après l'autre : quelques minutes au total, et jamais plusieurs requêtes simultanées vers un même site.
-    for (const source of this.sources) outcomes.push(await this.read(source, state))
+    let outOfScope = 0
+    for (const source of this.sources) {
+      const read = await this.read(source, state)
+      outcomes.push(read.outcome)
+      outOfScope += read.outOfScopeNew
+    }
 
     const today = parisDay(this.clock.now())
     const { report, next } = applyRun(state, outcomes, today)
@@ -69,7 +75,7 @@ export class ScanService {
         `${report.failures.length} source(s) en échec, ${report.warnings.length} avertissement(s).`,
     )
 
-    if (this.config.dryRun) return this.preview(batch, report, today)
+    if (this.config.dryRun) return this.preview(batch, report, today, outOfScope)
 
     const details = new DetailReader()
     const sent: NewListing[] = []
@@ -119,6 +125,7 @@ export class ScanService {
     const summary: DeliverySummary = {
       sent,
       outdated: outdated.length,
+      outOfScope,
       pending: unsent.length,
       perRunLimit: this.config.maxOfferEmailsPerRun,
       timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,
@@ -159,10 +166,11 @@ export class ScanService {
   }
 
   /** Essai : affiche le récapitulatif et le premier e-mail d'offre, complété comme il le serait ; rien n'est envoyé. */
-  private async preview(batch: NewListing[], report: RunReport, today: string): Promise<DeliverySummary> {
+  private async preview(batch: NewListing[], report: RunReport, today: string, outOfScope: number): Promise<DeliverySummary> {
     const summary: DeliverySummary = {
       sent: batch,
       outdated: 0,
+      outOfScope,
       pending: report.newListings.length - batch.length,
       perRunLimit: this.config.maxOfferEmailsPerRun,
       timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,
@@ -199,16 +207,27 @@ export class ScanService {
     }
   }
 
-  private async read(source: ListingSource, state: VeilleState): Promise<SourceOutcome> {
+  /**
+   * Lecture d'une source, réduite au périmètre informatique (it-scope.ts). `outOfScopeNew` : offres jamais vues
+   * écartées par ce périmètre, comptées dans le récapitulatif.
+   */
+  private async read(source: ListingSource, state: VeilleState): Promise<{ outcome: SourceOutcome; outOfScopeNew: number }> {
     const known = state.sources[source.id]
+    const isKnown = (id: string) => known !== undefined && Object.hasOwn(known.seen, id)
     const started = Date.now()
     try {
-      const batch = await source.fetch({ isKnown: (id) => known !== undefined && Object.hasOwn(known.seen, id) })
-      this.logger.log(`${source.label} : ${batch.listings.length} annonce(s) retenue(s), ${batch.ignoredIds.length} hors périmètre (${Date.now() - started} ms).`)
-      return { sourceId: source.id, label: source.label, kind: source.kind, ok: true, batch }
+      const { batch, outOfScope } = scopeToIt(await source.fetch({ isKnown }))
+      this.logger.log(
+        `${source.label} : ${batch.listings.length} annonce(s) informatique(s), ${outOfScope.length} hors informatique, ` +
+          `${batch.ignoredIds.length - outOfScope.length} hors organismes suivis (${Date.now() - started} ms).`,
+      )
+      return {
+        outcome: { sourceId: source.id, label: source.label, kind: source.kind, ok: true, batch },
+        outOfScopeNew: outOfScope.filter((id) => !isKnown(id)).length,
+      }
     } catch (error) {
       this.logger.error(`${source.label} : lecture impossible — ${message(error)}`, error instanceof Error ? error.stack : undefined)
-      return { sourceId: source.id, label: source.label, kind: source.kind, ok: false, error: message(error) }
+      return { outcome: { sourceId: source.id, label: source.label, kind: source.kind, ok: false, error: message(error) }, outOfScopeNew: 0 }
     }
   }
 }

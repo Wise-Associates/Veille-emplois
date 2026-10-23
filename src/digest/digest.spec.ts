@@ -4,7 +4,7 @@ import type { Listing } from '../listing.js'
 import { renderDigest, type DeliverySummary } from './digest.js'
 
 const day = '2026-10-22'
-const empty: DeliverySummary = { sent: [], outdated: 0, pending: 0, perRunLimit: 200, timeBudgetMinutes: 25, deliveryError: null, failures: [], warnings: [] }
+const empty: DeliverySummary = { sent: [], outdated: 0, outOfScope: 0, pending: 0, perRunLimit: 200, timeBudgetMinutes: 25, deliveryError: null, failures: [], warnings: [] }
 
 const listing = (overrides: Partial<Listing>): Listing => ({
   kind: 'job',

@@ -24,6 +24,10 @@ export interface Listing {
   description?: string
   /** Identifiant de procédure commun à BOAMP et TED : le même appel d'offres n'est annoncé qu'une fois. */
   procedureId?: string
+  /** Codes CPV d'un appel d'offres (classification européenne), pour le périmètre informatique (it-scope.ts). */
+  cpv?: string[]
+  /** Descripteurs du BOAMP (« Logiciel », « Informatique (prestations de services) »…), pour le même usage. */
+  descriptors?: string[]
 }
 
 /** Ce qu'une source a lu lors d'un passage. */

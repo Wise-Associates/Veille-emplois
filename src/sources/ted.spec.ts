@@ -32,6 +32,10 @@ describe('avis TED', () => {
     })
   })
 
+  it('reprend les codes CPV de l\'avis, sans doublon', () => {
+    assert.deepEqual(tedNoticeToListing(notice({ 'classification-cpv': ['72000000', '72000000', '48000000'] }))?.cpv, ['72000000', '48000000'])
+  })
+
   it('écarte un avis dont aucun acheteur n\'est suivi', () => {
     assert.equal(tedNoticeToListing(notice({ 'buyer-name': { fra: ['Commune fictive'] }, 'buyer-identifier': ['21000000000011'] })), null)
   })

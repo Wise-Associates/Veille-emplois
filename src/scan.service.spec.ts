@@ -19,7 +19,7 @@ const offer = (id: string, overrides: Partial<Listing> = {}): Listing => ({
   kind: 'job',
   id,
   organisationId: 'dinum',
-  title: `Offre fictive ${id}`,
+  title: `Développeur fictif ${id}`,
   url: `https://exemple.test/${id}`,
   details: [],
   ...overrides,
@@ -86,7 +86,7 @@ describe('passage de la veille', () => {
     const { scan, calls, offers, digests, saved } = await scanWith({ sources: [source('a', [offer('A1'), offer('A2'), offer('A3')])] })
     const summary = await scan.run()
     assert.deepEqual(calls, ['offre', 'offre', 'état', 'récapitulatif'])
-    assert.deepEqual(offers.map((o) => o.subject), ["Offre d'emploi — DINUM — Offre fictive A2", "Offre d'emploi — DINUM — Offre fictive A3"])
+    assert.deepEqual(offers.map((o) => o.subject), ["Offre d'emploi — DINUM — Développeur fictif A2", "Offre d'emploi — DINUM — Développeur fictif A3"])
     assert.deepEqual(summary.sent.map((l) => l.id), ['A2', 'A3'])
     assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A3'])
     assert.match(digests[0]?.subject ?? '', /2 offres d'emploi envoyées/)
@@ -122,11 +122,20 @@ describe('passage de la veille', () => {
     const describe = async (listing: Listing) => ({ deadline: listing.id === 'A2' ? '2026-10-21' : '2026-11-30' })
     const { scan, offers, saved, digests } = await scanWith({ sources: [source('a', [offer('A2'), offer('A3')], { describe })] })
     const summary = await scan.run()
-    assert.deepEqual(offers.map((o) => o.subject), ["Offre d'emploi — DINUM — Offre fictive A3"])
+    assert.deepEqual(offers.map((o) => o.subject), ["Offre d'emploi — DINUM — Développeur fictif A3"])
     assert.equal(summary.outdated, 1)
     assert.equal(summary.pending, 0)
     assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A3'], 'A2 retenue comme traitée')
     assert.match(digests[0]?.text ?? '', /1 nouvelle offre écartée : date limite déjà passée/)
+  })
+
+  it('n\'envoie que les offres informatiques, retient les autres et les compte dans le récapitulatif', async () => {
+    const { scan, offers, saved, digests } = await scanWith({ sources: [source('a', [offer('A2'), offer('A3', { title: 'Juriste fictif A3' })])] })
+    const summary = await scan.run()
+    assert.deepEqual(offers.map((o) => o.subject), ["Offre d'emploi — DINUM — Développeur fictif A2"])
+    assert.equal(summary.outOfScope, 1)
+    assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A3'], 'A3 retenue comme vue, jamais envoyée')
+    assert.match(digests[0]?.text ?? '', /1 nouvelle offre écartée : hors projets informatiques/)
   })
 
   it('envoie les appels d\'offres en premier', async () => {
@@ -161,7 +170,7 @@ describe('passage de la veille', () => {
     await assert.rejects(scan.run(), /1 offre\(s\) refusée\(s\)/)
     assert.equal(offers.length, 2)
     assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A4'])
-    assert.match(digests[0]?.text ?? '', /Offre refusée, retentée au prochain passage : « Offre fictive A3 »/)
+    assert.match(digests[0]?.text ?? '', /Offre refusée, retentée au prochain passage : « Développeur fictif A3 »/)
   })
 
   it('cesse de commencer des offres une fois le budget de temps atteint, sans erreur', async () => {

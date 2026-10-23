@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { boampBuyers, boampDescription, boampRecordToListing, boampWhere, extractBoampBuyers, type BoampRecord } from './boamp.source.js'
+import { boampBuyers, boampCpvCodes, boampDescription, boampRecordToListing, boampWhere, extractBoampBuyers, type BoampRecord } from './boamp.source.js'
 
 // Avis fictifs, construits sur la structure réelle des données BOAMP (octobre 2026).
 const eforms = (organizations: { id: string; name: string; siret: string }[], buyerIds: string[]) => ({
@@ -100,6 +100,16 @@ describe('avis du BOAMP', () => {
     }
     root['cac:ProcurementProjectLot'] = [{ 'cac:ProcurementProject': { 'cbc:Name': { '#text': 'Lot fictif' } } }]
     assert.deepEqual(boampDescription(eformsWithText), { description: 'Prestations fictives de maquettage\n\nLots\n- Lot 1 : Lot fictif', location: 'Montrouge' })
+  })
+
+  it('lit les codes CPV des avis européens et nationaux', () => {
+    const eformsCpv = { EFORMS: { ContractNotice: {
+      'cac:ProcurementProject': { 'cac:MainCommodityClassification': { 'cbc:ItemClassificationCode': { '@listName': 'cpv', '#text': '72000000' } } },
+      'cac:ProcurementProjectLot': [{ 'cac:ProcurementProject': { 'cac:MainCommodityClassification': { 'cbc:ItemClassificationCode': { '#text': '48000000' } } } }],
+    } } }
+    assert.deepEqual(boampCpvCodes(eformsCpv).sort(), ['48000000', '72000000'])
+    assert.deepEqual(boampCpvCodes({ FNSimple: { initial: { natureMarche: { codeCPV: { objetPrincipal: { classPrincipale: '72212000' } } } } } }), ['72212000'])
+    assert.deepEqual(boampCpvCodes({ MAPA: { organisme: { classificationOrganisme: '5' } } }), [], 'les petits avis n\'en ont pas')
   })
 
   it('signale un avis au contenu illisible au lieu de perdre en silence la reconnaissance par SIRET', () => {

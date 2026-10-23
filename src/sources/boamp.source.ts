@@ -36,6 +36,7 @@ const recordSchema = z.object({
   contractfolderid: z.string().nullish(),
   url_avis: z.string().nullish(),
   code_departement: z.array(z.string()).nullish(),
+  descripteur_libelle: z.array(z.string()).nullish(),
   donnees: z.string().nullish(),
 })
 const pageSchema = z.object({ total_count: z.number().int(), results: z.array(recordSchema) })
@@ -148,6 +149,28 @@ function parseDonnees(record: BoampRecord): Json | null {
 }
 
 /**
+ * Codes CPV d'un avis (procédure et lots) : `cbc:ItemClassificationCode` des avis européens (eForms), `codeCPV` des
+ * avis nationaux. Les petits avis (MAPA) n'en ont pas.
+ */
+export function boampCpvCodes(donnees: Json): string[] {
+  const codes = new Set<string>()
+  const collect = (value: Json): void => {
+    const code = text(value)
+    if (code && /^\d{8}/.test(code.trim())) codes.add(code.trim().slice(0, 8))
+    else if (value && typeof value === 'object') for (const nested of Object.values(value as Record<string, Json>)) collect(nested)
+  }
+  const walk = (value: Json): void => {
+    if (!value || typeof value !== 'object') return
+    for (const [key, nested] of Object.entries(value as Record<string, Json>)) {
+      if (key === 'cbc:ItemClassificationCode' || key === 'codeCPV') collect(nested)
+      else walk(nested)
+    }
+  }
+  walk(donnees)
+  return [...codes]
+}
+
+/**
  * Texte de l'avis (objet détaillé, caractéristiques, lots) et lieu d'exécution. Seuls ces champs sont lus : l'avis
  * contient aussi des contacts nominatifs, jamais repris.
  */
@@ -196,7 +219,10 @@ export function boampRecordToListing(record: BoampRecord, organisations: readonl
   if (!organisationId) return null
 
   const marketTypes = (record.type_marche ?? []).map((type) => MARKET_TYPES[type] ?? type).join(', ')
-  const { description, location } = boampDescription(parseDonnees(record) ?? {})
+  const donnees = parseDonnees(record) ?? {}
+  const { description, location } = boampDescription(donnees)
+  const cpv = boampCpvCodes(donnees)
+  const descriptors = (record.descripteur_libelle ?? []).filter(Boolean)
   const departments = (record.code_departement ?? []).filter(Boolean)
   return {
     kind: 'tender',
@@ -216,6 +242,8 @@ export function boampRecordToListing(record: BoampRecord, organisations: readonl
     location: location ?? (departments.length ? `Département(s) ${departments.join(', ')}` : undefined),
     description,
     procedureId: record.contractfolderid ?? undefined,
+    ...(cpv.length ? { cpv } : {}),
+    ...(descriptors.length ? { descriptors } : {}),
   }
 }
 
