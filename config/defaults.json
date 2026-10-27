@@ -648,5 +648,261 @@
       "travaux",
       "maitrise d ouvrage deleguee"
     ]
+  },
+  "tenderKeywords": {
+    "allBuyers": true,
+    "families": [
+      {
+        "id": "saas-logiciels",
+        "label": "SaaS, logiciels et plateformes",
+        "phrases": [
+          "saas",
+          "logiciel*",
+          "progiciel*",
+          "logiciel en mode saas",
+          "logiciel en tant que service",
+          "solution* saas",
+          "solution* logicielle*",
+          "plateforme* logicielle*",
+          "plateforme* numerique*",
+          "plateforme* digitale*",
+          "licence* logicielle*",
+          "abonnement* logiciel*",
+          "editeur* de logiciel*"
+        ],
+        "acronyms": []
+      },
+      {
+        "id": "developpement-applications",
+        "label": "Développement d'applications",
+        "phrases": [
+          "developpement* logiciel*",
+          "developpement d application*",
+          "developpement* applicatif*",
+          "conception et developpement",
+          "conception et realisation d une application",
+          "application* metier*",
+          "application* web",
+          "application* mobile*",
+          "application* specifique*",
+          "developpement sur mesure",
+          "interface* applicative*",
+          "interoperabilite applicative"
+        ],
+        "acronyms": [
+          "API"
+        ]
+      },
+      {
+        "id": "refonte-maintenance",
+        "label": "Refonte, modernisation et maintenance applicative",
+        "phrases": [
+          "refonte applicative",
+          "refonte du site*",
+          "refonte de site*",
+          "refonte des sites",
+          "refonte du portail",
+          "refonte de* l application",
+          "refonte des applications",
+          "refonte du systeme d information",
+          "refonte de* logiciel*",
+          "refonte de* plateforme*",
+          "modernisation applicative",
+          "modernisation de* logiciel*",
+          "modernisation des applications",
+          "evolution* applicative*",
+          "maintenance applicative",
+          "maintenance evolutive",
+          "maintenance corrective",
+          "tierce maintenance applicative",
+          "migration applicative",
+          "reprise d application*",
+          "renouvellement de* logiciel*"
+        ],
+        "acronyms": [
+          "TMA"
+        ]
+      },
+      {
+        "id": "digitalisation",
+        "label": "Digitalisation et dématérialisation",
+        "phrases": [
+          "digitalisation",
+          "transformation digitale",
+          "transformation numerique",
+          "dematerialisation",
+          "automatisation des processus",
+          "workflow*",
+          "gestion electronique des documents",
+          "signature* electronique*",
+          "teleservice*",
+          "portail usager*",
+          "portail* numerique*",
+          "parcours utilisateur*",
+          "services numeriques"
+        ],
+        "acronyms": [
+          "GED"
+        ]
+      },
+      {
+        "id": "gouvernance-donnees",
+        "label": "Gouvernance et qualité des données",
+        "phrases": [
+          "gouvernance des donnees",
+          "gouvernance de la donnee",
+          "data governance",
+          "data steward*",
+          "data owner*",
+          "responsable* de donnees",
+          "referent* data",
+          "gestion des donnees",
+          "data management",
+          "qualite des donnees",
+          "data quality",
+          "referentiel* de donnees",
+          "master data management",
+          "catalogue* de donnees",
+          "catalogue* de metadonnees",
+          "metadonnee*",
+          "dictionnaire* de donnees",
+          "tracabilite des donnees",
+          "data lineage",
+          "cycle de vie de la donnee",
+          "cycle de vie des donnees"
+        ],
+        "acronyms": [
+          "MDM"
+        ]
+      },
+      {
+        "id": "plateformes-donnees",
+        "label": "Plateformes et intégration de données",
+        "phrases": [
+          "plateforme* data",
+          "plateforme* de donnees",
+          "architecture* de donnees",
+          "entrepot* de donnees",
+          "data warehouse",
+          "datawarehouse",
+          "data lake*",
+          "datalake*",
+          "lakehouse",
+          "integration de donnees",
+          "migration de donnees",
+          "echange* de donnees",
+          "flux de donnees",
+          "big data",
+          "open data",
+          "conception de* base* de donnees",
+          "administration de* base* de donnees"
+        ],
+        "acronyms": [
+          "ETL",
+          "ELT"
+        ]
+      },
+      {
+        "id": "bi-reporting",
+        "label": "BI, reporting et analyse de données",
+        "phrases": [
+          "informatique decisionnelle",
+          "business intelligence",
+          "outil* de reporting",
+          "solution* de reporting",
+          "solution* decisionnelle*",
+          "datavisualisation",
+          "data visualisation",
+          "dataviz",
+          "visualisation de donnees",
+          "analyse* de donnees",
+          "indicateurs de pilotage"
+        ],
+        "acronyms": [
+          "BI"
+        ]
+      },
+      {
+        "id": "intelligence-artificielle",
+        "label": "Intelligence artificielle",
+        "phrases": [
+          "intelligence artificielle",
+          "ia generative",
+          "machine learning",
+          "apprentissage automatique",
+          "modele* de langage",
+          "agent* ia",
+          "agent* intelligent*",
+          "traitement automatique du langage",
+          "traitement du langage naturel",
+          "reconnaissance automatique de documents",
+          "automatisation intelligente"
+        ],
+        "acronyms": [
+          "IA",
+          "LLM",
+          "RAG"
+        ]
+      },
+      {
+        "id": "conseil-si",
+        "label": "Conseil SI, AMOA et pilotage",
+        "phrases": [
+          "conseil en systeme* d information",
+          "conseil informatique",
+          "cadrage de projet* informatique*",
+          "pilotage de projet* informatique*",
+          "gestion de projet* numerique*",
+          "schema directeur informatique",
+          "schema directeur des systemes d information",
+          "schema directeur du systeme d information",
+          "schema directeur numerique",
+          "urbanisation du systeme d information",
+          "urbanisation des systemes d information",
+          "architecture applicative",
+          "audit* des systemes d information",
+          "audit* du systeme d information",
+          "audit informatique"
+        ],
+        "acronyms": [
+          "AMOA",
+          "AMOE"
+        ]
+      },
+      {
+        "id": "risques-conformite-outils",
+        "label": "Outils de risques, conformité et audit",
+        "phrases": [
+          "outil* de gestion des risques",
+          "solution* de gestion des risques",
+          "logiciel* de gestion des risques",
+          "outil* de pilotage des risques",
+          "outil* de conformite",
+          "solution* de conformite",
+          "logiciel* de conformite",
+          "outil* d audit",
+          "logiciel* d audit",
+          "outil* de controle interne",
+          "logiciel* de controle interne",
+          "outil* de reporting reglementaire",
+          "solution* de reporting reglementaire"
+        ],
+        "acronyms": []
+      }
+    ],
+    "infrastructurePhrases": [
+      "fourniture* de serveur*",
+      "equipement* reseau*",
+      "materiel* informatique*",
+      "stockage informatique",
+      "hebergement seul",
+      "cablage* reseau*",
+      "centre* de donnees",
+      "maintenance materielle",
+      "maintenance des serveurs",
+      "pylone*",
+      "mat* d antenne*",
+      "antenne* relais"
+    ]
   }
 }

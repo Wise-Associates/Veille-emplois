@@ -21,7 +21,8 @@ const FOOTER = 'Annonce relevée automatiquement par la veille marchés et emplo
 
 export function renderOfferEmail(listing: Listing, organisations: readonly Organisation[] = ORGANISATIONS): RenderedEmail {
   const kind = KIND[listing.kind]
-  const organisation = organisationName(listing.organisationId, organisations)
+  // Avis d'un acheteur non suivi (recherche chez tous les acheteurs) : l'acheteur est le client.
+  const organisation = listing.buyer ?? organisationName(listing.organisationId, organisations)
   const url = safeUrl(listing.url)
   const subject = `${kind.label} — ${organisation} — ${listing.title}`.replace(/\s+/g, ' ')
 

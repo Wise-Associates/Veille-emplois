@@ -4,7 +4,10 @@
 // Appels d'offres : services informatiques et logiciels, d'après la classification européenne (CPV 72 : services
 // informatiques — conseil, développement, intégration, support, hébergement ; CPV 48 : logiciels et systèmes
 // d'information) ou les descripteurs du BOAMP. Hors périmètre : matériel, maintenance de serveurs et réseaux,
-// télécommunications, travaux. Un avis sans aucune classification est jugé sur son intitulé.
+// télécommunications, travaux. Un avis sans aucune classification est jugé sur son intitulé. Depuis le 27/10/2026
+// (ADR 0006), les mots-clés des appels d'offres (SaaS, digitalisation, données, IA…), cherchés dans l'intitulé et la
+// description, l'emportent sur la classification : un projet de digitalisation est souvent classé « conseil » (CPV 79).
+// Un avis classé informatique dont l'intitulé ne parle que d'infrastructure, sans aucun mot-clé, est écarté.
 //
 // Offres d'emploi : métiers techniques, données / IA / cybersécurité, projets informatiques et SI métier (AMOA,
 // business analyst, ERP, SI financiers), métiers du numérique (UX/UI, web), d'après l'intitulé et la catégorie.
@@ -17,7 +20,7 @@
 import type { Listing, SourceBatch } from './listing.js'
 import { containsPhrase, normalize, normalizePhrase } from './phrases.js'
 import { DEFAULT_SETTINGS } from './settings/defaults.js'
-import type { ItScopeSettings } from './settings/veille-settings.js'
+import type { VeilleSettings } from './settings/veille-settings.js'
 
 /** Règles du périmètre informatique, sous la forme comparée (itRulesFrom). */
 export interface ItRules {
@@ -40,22 +43,33 @@ export interface ItRules {
    * relevé chez Expertise France), et les travaux sont hors périmètre même informatiques (câblage).
    */
   exclusions: string[]
+  /** Mots-clés des appels d'offres, toutes familles réunies (expressions, puis sigles en majuscules). */
+  tenderPhrases: string[]
+  tenderAcronyms: RegExp | null
+  /** « Infrastructure seule », cherchées dans l'intitulé d'un avis classé informatique. */
+  infrastructure: string[]
 }
 
-export function itRulesFrom(scope: ItScopeSettings): ItRules {
+// Sigles validés (majuscules et chiffres seulement) : sûrs dans une expression régulière.
+const acronymPattern = (acronyms: string[]) => (acronyms.length ? new RegExp(`\\b(${acronyms.join('|')})\\b`) : null)
+
+export function itRulesFrom(settings: Pick<VeilleSettings, 'itScope' | 'tenderKeywords'>): ItRules {
+  const { itScope: scope, tenderKeywords: keywords } = settings
   return {
     enabled: scope.enabled,
     cpvPrefixes: scope.cpvPrefixes,
     descriptors: new Set(scope.boampDescriptors.map(normalize)),
     phrases: scope.phrases.map(normalizePhrase),
-    // Sigles validés (majuscules et chiffres seulement) : sûrs dans une expression régulière.
-    acronyms: scope.acronyms.length ? new RegExp(`\\b(${scope.acronyms.join('|')})\\b`) : null,
+    acronyms: acronymPattern(scope.acronyms),
     exclusions: scope.exclusionPhrases.map(normalizePhrase),
+    tenderPhrases: keywords.families.flatMap((family) => family.phrases.map(normalizePhrase)),
+    tenderAcronyms: acronymPattern([...new Set(keywords.families.flatMap((family) => family.acronyms))]),
+    infrastructure: keywords.infrastructurePhrases.map(normalizePhrase),
   }
 }
 
 /** Règles des réglages du dépôt : valeur par défaut des fonctions ci-dessous (et des tests). */
-export const DEFAULT_IT_RULES: ItRules = itRulesFrom(DEFAULT_SETTINGS.itScope)
+export const DEFAULT_IT_RULES: ItRules = itRulesFrom(DEFAULT_SETTINGS)
 
 /** Le texte parle-t-il d'informatique (expressions, sigles en majuscules) hors des exclusions ? */
 export function mentionsIt(text: string, rules: ItRules = DEFAULT_IT_RULES): boolean {
@@ -65,13 +79,33 @@ export function mentionsIt(text: string, rules: ItRules = DEFAULT_IT_RULES): boo
   return rules.phrases.some((phrase) => containsPhrase(normalized, phrase))
 }
 
+/**
+ * Un mot-clé des appels d'offres figure-t-il dans l'intitulé ou la description d'un avis ? Les exclusions (travaux…)
+ * ne sont cherchées que dans l'intitulé : une description parle volontiers des « travaux de développement ».
+ */
+export function mentionsTenderKeyword(listing: Pick<Listing, 'title' | 'description'>, rules: ItRules = DEFAULT_IT_RULES): boolean {
+  if (rules.exclusions.some((phrase) => containsPhrase(normalize(listing.title), phrase))) return false
+  const text = `${listing.title}\n${listing.description ?? ''}`
+  if (rules.tenderAcronyms?.test(text)) return true
+  const normalized = normalize(text)
+  return rules.tenderPhrases.some((phrase) => containsPhrase(normalized, phrase))
+}
+
 /** Appel d'offres de services informatiques ou de logiciels. */
-export function isItTender(listing: Pick<Listing, 'title' | 'cpv' | 'descriptors'>, rules: ItRules = DEFAULT_IT_RULES): boolean {
+export function isItTender(listing: Pick<Listing, 'title' | 'description' | 'cpv' | 'descriptors'>, rules: ItRules = DEFAULT_IT_RULES): boolean {
   const cpv = (listing.cpv ?? []).map((code) => code.replace(/\D/g, '')).filter(Boolean)
   const descriptors = (listing.descriptors ?? []).map(normalize)
-  if (cpv.some((code) => rules.cpvPrefixes.some((prefix) => code.startsWith(prefix)))) return true
-  if (descriptors.some((descriptor) => rules.descriptors.has(descriptor))) return true
-  // Classé hors informatique par l'acheteur ou le BOAMP : la classification l'emporte sur les mots de l'intitulé.
+  const keyword = mentionsTenderKeyword(listing, rules)
+  const classifiedIt =
+    cpv.some((code) => rules.cpvPrefixes.some((prefix) => code.startsWith(prefix))) ||
+    descriptors.some((descriptor) => rules.descriptors.has(descriptor))
+  if (classifiedIt) {
+    // CPV 72 comprend aussi les réseaux et l'hébergement : hors périmètre quand l'intitulé n'en dit pas plus.
+    const infrastructure = rules.infrastructure.some((phrase) => containsPhrase(normalize(listing.title), phrase))
+    return keyword || !infrastructure
+  }
+  if (keyword) return true
+  // Classé hors informatique par l'acheteur ou le BOAMP, sans mot-clé : la classification l'emporte sur l'intitulé.
   if (cpv.length || descriptors.length) return false
   return mentionsIt(listing.title, rules)
 }

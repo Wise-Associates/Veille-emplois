@@ -73,7 +73,7 @@ export class ScanService {
     const chosen = await this.settingsLoader.load(state.settings)
     const organisations = organisationsFrom(chosen.settings)
     const sources = this.createSources(chosen.settings, organisations)
-    const itRules = itRulesFrom(chosen.settings.itScope)
+    const itRules = itRulesFrom(chosen.settings)
     const settingsWarnings = chosen.warning ? [{ label: 'Réglages de la veille', message: chosen.warning }] : []
     const outcomes: SourceOutcome[] = []
     // Une source après l'autre : quelques minutes au total, et jamais plusieurs requêtes simultanées vers un même site.

@@ -18,7 +18,7 @@ const edit = (patch: (s: VeilleSettings) => void): VeilleSettings => {
 
 describe('sources d\'un passage, d\'après les réglages', () => {
   it('garde les identifiants du fichier d\'état et lit BOAMP avant TED', () => {
-    const ids = idsFor(edit((s) => { s.sources.reverse() }))
+    const ids = idsFor(edit((s) => { s.sources.reverse(); s.tenderKeywords.allBuyers = false }))
     assert.deepEqual(ids.slice(0, 2), ['boamp', 'ted'])
     for (const id of ['csp-dgfip', 'csp-autorite-concurrence', 'sfil-carrieres', 'expertise-france-carrieres', 'banque-postale-carrieres', 'afd-carrieres', 'crh-site']) {
       assert.ok(ids.includes(id), id)
@@ -37,10 +37,23 @@ describe('sources d\'un passage, d\'après les réglages', () => {
     assert.ok(ids.includes('csp-dgfip'))
   })
 
-  it('ne lit ni le BOAMP ni TED quand aucun organisme n\'est suivi pour ses appels d\'offres', () => {
-    const ids = idsFor(edit((s) => { for (const organisation of s.organisations) organisation.tenderRules = [] }))
-    assert.ok(!ids.includes('boamp') && !ids.includes('ted'))
-    assert.ok(ids.includes('csp-dgfip'))
+  it('ne lit ni le BOAMP ni TED quand aucun organisme n\'est suivi pour ses appels d\'offres, sauf chez tous les acheteurs', () => {
+    const withoutRules = (allBuyers: boolean) => edit((s) => {
+      for (const organisation of s.organisations) organisation.tenderRules = []
+      s.tenderKeywords.allBuyers = allBuyers
+    })
+    const followedOnly = idsFor(withoutRules(false))
+    assert.ok(!followedOnly.includes('boamp') && !followedOnly.includes('ted'))
+    assert.ok(followedOnly.includes('csp-dgfip'))
+    const allBuyers = idsFor(withoutRules(true))
+    assert.ok(!allBuyers.includes('boamp') && !allBuyers.includes('ted'))
+    assert.ok(allBuyers.includes('boamp-tous-acheteurs') && allBuyers.includes('ted-tous-acheteurs'), 'recherche par mots-clés chez tous les acheteurs')
+  })
+
+  it('lit la recherche chez tous les acheteurs dans des sources à part, après celles des organismes suivis', () => {
+    assert.deepEqual(idsFor(DEFAULT_SETTINGS).slice(0, 4), ['boamp', 'boamp-tous-acheteurs', 'ted', 'ted-tous-acheteurs'])
+    const followedOnly = idsFor(edit((s) => { s.tenderKeywords.allBuyers = false }))
+    assert.ok(!followedOnly.some((id) => id.endsWith('-tous-acheteurs')))
   })
 
   it('crée une source ajoutée dans les réglages, avec son propre identifiant', () => {

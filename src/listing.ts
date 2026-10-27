@@ -11,6 +11,11 @@ export interface Listing {
   /** Identifiant stable dans sa source (numéro d'avis, référence d'offre) : c'est lui qui repère les nouveautés. */
   id: string
   organisationId: OrganisationId
+  /**
+   * Nom de l'acheteur d'un appel d'offres hors organismes suivis (`OTHER_BUYERS_ID`, recherche chez tous les acheteurs) :
+   * il remplace le nom de l'organisme comme client dans l'e-mail.
+   */
+  buyer?: string
   title: string
   url: string
   /** Date de publication (AAAA-MM-JJ), quand la source en donne une fiable. */

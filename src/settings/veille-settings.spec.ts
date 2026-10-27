@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { OTHER_BUYERS_ID, organisationsFrom } from '../organisations.js'
 import { DEFAULT_SETTINGS } from './defaults.js'
 import { chooseSettings, isPublicHttpsUrl, parseVeilleSettings, type VeilleSettings } from './veille-settings.js'
 
@@ -50,6 +51,30 @@ describe('réglages de la veille', () => {
     })
     assert.equal(parseVeilleSettings(http).success, false)
     assert.equal(parseVeilleSettings(settings((s) => { s.itScope.phrases.push('***') })).success, false)
+  })
+})
+
+describe('mots-clés des appels d\'offres', () => {
+  it('lit des réglages enregistrés avant les mots-clés : recherche limitée aux organismes suivis', () => {
+    const before: Record<string, unknown> = { ...settings() }
+    delete before.tenderKeywords
+    const parsed = parseVeilleSettings(before)
+    assert.ok(parsed.success)
+    assert.deepEqual(parsed.success && parsed.settings.tenderKeywords, { allBuyers: false, families: [], infrastructurePhrases: [] })
+    assert.ok(parsed.success && !organisationsFrom(parsed.settings).some((o) => o.id === OTHER_BUYERS_ID))
+  })
+
+  it('ajoute « Autres acheteurs » après les organismes suivis quand la veille cherche chez tous les acheteurs', () => {
+    const organisations = organisationsFrom(settings((s) => { s.tenderKeywords.allBuyers = true }))
+    assert.deepEqual(organisations.at(-1), { id: OTHER_BUYERS_ID, name: 'Autres acheteurs', tenderRules: [] })
+    assert.equal(parseVeilleSettings(settings((s) => { for (const o of s.organisations.slice(0, 1)) o.id = OTHER_BUYERS_ID })).success, false, 'identifiant réservé')
+  })
+
+  it('refuse une famille en double ou vide, et un descripteur BOAMP qui casserait la requête', () => {
+    const family = { id: 'fictive', label: 'Fictive', phrases: ['plateforme fictive'], acronyms: [] }
+    assert.equal(parseVeilleSettings(settings((s) => { s.tenderKeywords.families = [family, { ...family }] })).success, false)
+    assert.equal(parseVeilleSettings(settings((s) => { s.tenderKeywords.families = [{ ...family, phrases: [] }] })).success, false)
+    assert.equal(parseVeilleSettings(settings((s) => { s.itScope.boampDescriptors.push('Logiciel" OR nature="X') })).success, false)
   })
 })
 

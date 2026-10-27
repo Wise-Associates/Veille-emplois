@@ -39,13 +39,20 @@ export interface Organisation {
 }
 
 /**
+ * Appels d'offres des acheteurs non suivis, quand la veille cherche chez tous les acheteurs (ADR 0006). Le tiret bas
+ * initial est refusé dans l'identifiant d'un organisme des réglages : pas de collision possible.
+ */
+export const OTHER_BUYERS_ID: OrganisationId = '_autres-acheteurs'
+
+/**
  * Organismes suivis d'après les réglages, dans leur ordre (un avis reconnu par deux organismes est rattaché au premier :
  * « DGFiP - DRFiP … » à la DGFiP). Un organisme désactivé n'est pas suivi. Expressions mises sous leur forme comparée.
+ * Recherche chez tous les acheteurs : « Autres acheteurs » à la fin (envoyés et présentés après les organismes suivis).
  */
 export function organisationsFrom(settings: VeilleSettings): Organisation[] {
   // Liste vide = champ absent : `requiredText: []` exigerait une expression parmi aucune (règle jamais vérifiée).
   const optional = (key: keyof TenderRule, values: string[]) => (values.length ? { [key]: values } : {})
-  return settings.organisations
+  const followed = settings.organisations
     .filter((organisation) => organisation.enabled)
     .map((organisation) => ({
       id: organisation.id,
@@ -57,6 +64,7 @@ export function organisationsFrom(settings: VeilleSettings): Organisation[] {
         ...optional('requiredText', rule.requiredText.map(normalizePhrase)),
       })),
     }))
+  return settings.tenderKeywords.allBuyers ? [...followed, { id: OTHER_BUYERS_ID, name: 'Autres acheteurs', tenderRules: [] }] : followed
 }
 
 /** Organismes des réglages du dépôt : valeur par défaut des fonctions qui en ont besoin (et des tests). */

@@ -56,6 +56,27 @@ const TenderRule = z
   })
   .refine((r) => r.sirens.length + r.names.length > 0, 'règle sans SIREN ni nom')
 
+const Acronym = z.string().regex(/^[A-Z0-9]{2,10}$/, 'sigle en majuscules')
+
+/** Famille de mots-clés des appels d'offres (« SaaS, logiciels », « Gouvernance des données »…) : une recherche par famille. */
+const KeywordFamily = z
+  .object({ id: Key, label: Label, phrases: list(Phrase, 200), acronyms: list(Acronym, 50) })
+  .refine((f) => f.phrases.length + f.acronyms.length > 0, 'famille sans mot-clé')
+
+/**
+ * Mots-clés des appels d'offres (décision du 2026-10-27, ADR 0006). Absents des réglages enregistrés avant cette date :
+ * recherche limitée aux organismes suivis, sans mot-clé.
+ */
+const TenderKeywords = z
+  .object({
+    /** Chercher aussi les avis des acheteurs non suivis (BOAMP et TED), par mots-clés et classification informatique. */
+    allBuyers: z.boolean(),
+    families: z.array(KeywordFamily).max(30),
+    /** « Infrastructure seule » : écartent un avis classé informatique dont l'intitulé en parle sans aucun mot-clé. */
+    infrastructurePhrases: list(Phrase, 200),
+  })
+  .default({ allBuyers: false, families: [], infrastructurePhrases: [] })
+
 const Source = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('boamp'), id: z.literal('boamp'), enabled: z.boolean() }),
   z.object({ kind: z.literal('ted'), id: z.literal('ted'), enabled: z.boolean() }),
@@ -75,17 +96,20 @@ const SettingsSchema = z
     itScope: z.object({
       enabled: z.boolean(),
       cpvPrefixes: list(z.string().regex(/^\d{1,8}$/), 50),
-      boampDescriptors: list(z.string().max(120), 50),
+      // Sans guillemet ni barre oblique inverse : les descripteurs entrent dans la requête BOAMP de tous les acheteurs.
+      boampDescriptors: list(z.string().max(120).regex(/^[^"\\]+$/, 'descripteur sans guillemet ni \\'), 50),
       phrases: list(Phrase, 1000),
-      acronyms: list(z.string().regex(/^[A-Z0-9]{2,10}$/, 'sigle en majuscules'), 200),
+      acronyms: list(Acronym, 200),
       exclusionPhrases: list(Phrase, 200),
     }),
+    tenderKeywords: TenderKeywords,
   })
   .superRefine((settings, ctx) => {
     const fail = (message: string) => ctx.addIssue({ code: 'custom', message })
     const duplicates = (ids: string[]) => [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))]
     for (const id of duplicates(settings.organisations.map((o) => o.id))) fail(`organisme « ${id} » en double`)
     for (const id of duplicates(settings.sources.map((s) => s.id))) fail(`source « ${id} » en double`)
+    for (const id of duplicates(settings.tenderKeywords.families.map((f) => f.id))) fail(`famille de mots-clés « ${id} » en double`)
     const organisations = new Set(settings.organisations.map((o) => o.id))
     for (const source of settings.sources) {
       const organisationId = source.kind === 'builtin' ? BUILTIN_SOURCE_ORGANISATIONS[source.id] : 'organisationId' in source ? source.organisationId : null
@@ -96,6 +120,7 @@ const SettingsSchema = z
 export type VeilleSettings = z.infer<typeof SettingsSchema>
 export type SourceSettings = VeilleSettings['sources'][number]
 export type ItScopeSettings = VeilleSettings['itScope']
+export type TenderKeywordSettings = VeilleSettings['tenderKeywords']
 
 export function parseVeilleSettings(input: unknown): { success: true; settings: VeilleSettings } | { success: false; error: string } {
   const parsed = SettingsSchema.safeParse(input)

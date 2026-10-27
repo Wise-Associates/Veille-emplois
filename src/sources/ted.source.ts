@@ -5,8 +5,10 @@
 import { z } from 'zod'
 import { addDays, parisDay } from '../dates.js'
 import type { HttpClient } from '../http/http-client.js'
+import { isItTender } from '../it-scope.js'
 import type { Listing, ListingSource, SourceBatch } from '../listing.js'
-import { ORGANISATIONS, type Organisation } from '../organisations.js'
+import { ORGANISATIONS, OTHER_BUYERS_ID, type Organisation } from '../organisations.js'
+import type { AllBuyersSearch } from '../tenders/all-buyers.js'
 import { matchOrganisation } from '../tenders/buyer-match.js'
 import { limitText } from '../text.js'
 import { PUBLICATION_LOOKBACK_DAYS } from './boamp.source.js'
@@ -83,15 +85,24 @@ export function tedName(phrase: string): string | null {
     if (word.replace('*', '').length <= 1) break
     words.push(word)
   }
-  while (words.length && TRAILING_LINK_WORDS.has(words[words.length - 1] ?? '')) words.pop()
+  while (words.length && TRAILING_LINK_WORDS.has((words[words.length - 1] ?? '').replace('*', ''))) words.pop()
   if (!words.length) return null
   return words.length === 1 ? (words[0] ?? null) : `"${words.join(' ').replaceAll('*', '')}"`
 }
 
 /**
- * Requête experte TED : avis de mise en concurrence (ni résultats ni rectificatifs) des organismes suivis, publiés
- * depuis `since` et dont un lot au moins est encore ouvert le jour `today`.
+ * Avis de mise en concurrence (ni résultats ni rectificatifs) d'acheteurs français, publiés depuis `since` et dont un
+ * lot au moins est encore ouvert le jour `today`.
  */
+function openNotices(since: string, today: string): string {
+  const compact = (day: string) => day.replaceAll('-', '')
+  return (
+    `buyer-country=FRA AND publication-date>=${compact(since)} AND deadline-receipt-tender-date-lot>=${compact(today)} ` +
+    `AND form-type=competition AND NOT change-notice-version-identifier=*`
+  )
+}
+
+/** Requête experte TED : avis ouverts des organismes suivis (openNotices). */
 export function tedQuery(since: string, today: string, organisations: readonly Organisation[] = ORGANISATIONS): string {
   const sirens = organisations.flatMap((o) => o.tenderRules.flatMap((rule) => (rule.requiredText ? [] : (rule.sirens ?? []))))
   // Réglages sans SIREN, ou dont toutes les expressions sont coupées : jamais de clause vide, que TED refuse (« IN () »).
@@ -108,25 +119,79 @@ export function tedQuery(since: string, today: string, organisations: readonly O
     }
   }
   if (!clauses.length) throw new Error('Aucun acheteur cherchable dans TED : SIREN ou noms d\'acheteur des organismes à compléter dans les réglages.')
-  const compact = (day: string) => day.replaceAll('-', '')
-  return (
-    `buyer-country=FRA AND publication-date>=${compact(since)} AND deadline-receipt-tender-date-lot>=${compact(today)} ` +
-    `AND form-type=competition AND NOT change-notice-version-identifier=* AND (${clauses.join(' OR ')})`
-  )
+  return `${openNotices(since, today)} AND (${clauses.join(' OR ')})`
 }
 
-/** Annonce correspondant à un avis TED, ou null si aucun de ses acheteurs n'est un organisme suivi. */
-export function tedNoticeToListing(notice: TedNotice, organisations: readonly Organisation[] = ORGANISATIONS): Listing | null {
+/**
+ * Un terme seul de moins de trois lettres est ignoré par la recherche TED : la condition devient toujours vraie
+ * (`title-proc~IA` renvoie tous les avis français ouverts, 4 718 en octobre 2026). Ces sigles ne sont cherchés qu'au
+ * BOAMP ; dans TED, un avis qui n'a qu'eux dans son intitulé n'est trouvé que par son code CPV.
+ */
+const tedSearchable = (term: string) => term.startsWith('"') || term.replace('*', '').length > 2
+
+/**
+ * Mot-clé cherché dans l'intitulé de la procédure. Comme pour les noms (tedName), la recherche TED rate les mots d'une
+ * lettre ; couper avant le premier ramènerait des milliers d'avis (« développement d application » → « développement ») :
+ * chaque morceau est exigé (« développement » et « application »). null s'il n'en reste rien.
+ */
+export function tedKeywordClause(phrase: string): string | null {
+  const segments: string[][] = [[]]
+  for (const word of phrase.split(' ')) {
+    if (word.replace('*', '').length <= 1) segments.push([])
+    else segments[segments.length - 1]?.push(word)
+  }
+  const terms = segments
+    .map((words) => tedName(words.join(' ')))
+    .filter((term): term is string => term !== null && tedSearchable(term))
+  if (terms.length <= 1) return terms[0] === undefined ? null : `title-proc~${terms[0]}`
+  return `(${terms.map((term) => `title-proc~${term}`).join(' AND ')})`
+}
+
+/**
+ * Requêtes de la recherche chez tous les acheteurs (all-buyers.ts) : avis ouverts classés informatique (CPV), puis une
+ * requête par famille de mots-clés, cherchés dans l'intitulé de la procédure (tedKeywordClause ; sigles tels quels, la
+ * recherche TED ignore la casse) ; `label` nomme la requête dans une erreur. Jamais de clause vide.
+ */
+export function tedAllBuyersQueries(since: string, today: string, search: AllBuyersSearch): { label: string; query: string }[] {
+  const clauses = [
+    {
+      label: 'Avis classés informatique',
+      clause: search.cpvPrefixes.length ? `classification-cpv IN (${search.cpvPrefixes.map((prefix) => `${prefix}*`).join(' ')})` : '',
+    },
+    ...search.families.map((family) => ({
+      label: `Famille « ${family.label} »`,
+      clause: [
+        ...new Set([
+          ...family.phrases.map(tedKeywordClause).filter((clause): clause is string => clause !== null),
+          ...family.acronyms.filter(tedSearchable).map((acronym) => `title-proc~${acronym}`),
+        ]),
+      ].join(' OR '),
+    })),
+  ]
+  return clauses.filter(({ clause }) => clause).map(({ label, clause }) => ({ label, query: `${openNotices(since, today)} AND (${clause})` }))
+}
+
+/**
+ * Annonce correspondant à un avis TED, ou null si aucun de ses acheteurs n'est un organisme suivi. `allBuyers` (avis
+ * de la recherche chez tous les acheteurs) : un avis d'un autre acheteur est rattaché à « Autres acheteurs », avec son
+ * nom d'acheteur.
+ */
+export function tedNoticeToListing(
+  notice: TedNotice,
+  organisations: readonly Organisation[] = ORGANISATIONS,
+  options: { allBuyers?: boolean } = {},
+): Listing | null {
   const buyerNames = Object.values(notice['buyer-name'] ?? {}).flatMap(values)
   const buyers = [
     ...buyerNames.map((name) => ({ name })),
     ...values(notice['buyer-identifier']).map((siret) => ({ name: '', siret })),
   ]
-  // La requête filtre sur les acheteurs : un avis renvoyé sans acheteur signale un changement de format de l'API.
+  // Tout avis de mise en concurrence a un acheteur : un avis renvoyé sans acheteur signale un changement de format de l'API.
   if (!buyers.length) throw new Error(`Avis TED ${notice['publication-number']} sans acheteur : le format de l'API a peut-être changé.`)
   const title = french(notice['title-proc']) ?? french(notice['notice-title']) ?? '(objet non précisé)'
   const description = french(notice['description-proc']) ?? ''
-  const organisationId = matchOrganisation({ buyers, text: `${title} ${description}` }, organisations)
+  const followed = matchOrganisation({ buyers, text: `${title} ${description}` }, organisations)
+  const organisationId = followed ?? (options.allBuyers ? OTHER_BUYERS_ID : null)
   if (!organisationId) return null
 
   const number = notice['publication-number']
@@ -138,6 +203,7 @@ export function tedNoticeToListing(notice: TedNotice, organisations: readonly Or
     kind: 'tender',
     id: number,
     organisationId,
+    ...(followed ? {} : { buyer: buyerName?.replace(/\s+/g, ' ').trim() || 'Acheteur public' }),
     title,
     url: `https://ted.europa.eu/fr/notice/-/detail/${encodeURIComponent(number)}`,
     publishedOn: notice['publication-date'].slice(0, 10),
@@ -153,6 +219,22 @@ export function tedNoticeToListing(notice: TedNotice, organisations: readonly Or
   }
 }
 
+/** Avis TED pour une requête, page après page. */
+async function tedNotices(http: HttpClient, query: string): Promise<TedNotice[]> {
+  const notices: TedNotice[] = []
+  for (let page = 1; ; page++) {
+    if (page > MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis TED ouverts : requête à vérifier.`)
+    const response = await http.json(API_URL, responseSchema, {
+      json: { query, fields: FIELDS, page, limit: PAGE_SIZE, scope: 'ALL', checkQuerySyntax: false, paginationMode: 'PAGE_NUMBER' },
+    })
+    notices.push(...response.notices)
+    if (notices.length >= response.totalNoticeCount) break
+    if (response.notices.length === 0) throw new Error(`Page vide après ${notices.length} avis sur ${response.totalNoticeCount} annoncés.`)
+  }
+  return notices
+}
+
+/** Avis des organismes suivis, reconnus par leurs règles d'acheteur. */
 export class TedSource implements ListingSource {
   readonly id = 'ted'
   readonly label = "TED (Journal officiel de l'UE)"
@@ -167,19 +249,50 @@ export class TedSource implements ListingSource {
 
   async fetch(): Promise<SourceBatch> {
     const today = parisDay(this.now())
-    const query = tedQuery(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today, this.organisations)
-    const notices: TedNotice[] = []
-    for (let page = 1; ; page++) {
-      if (page > MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis TED ouverts : requête à vérifier.`)
-      const response = await this.http.json(API_URL, responseSchema, {
-        json: { query, fields: FIELDS, page, limit: PAGE_SIZE, scope: 'ALL', checkQuerySyntax: false, paginationMode: 'PAGE_NUMBER' },
-      })
-      notices.push(...response.notices)
-      if (notices.length >= response.totalNoticeCount) break
-      if (response.notices.length === 0) throw new Error(`Page vide après ${notices.length} avis sur ${response.totalNoticeCount} annoncés.`)
-    }
+    const notices = await tedNotices(this.http, tedQuery(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today, this.organisations))
     // Les avis d'autres acheteurs ne sont pas retenus comme vus : les avis ouverts sont relus à chaque passage, et
     // une règle d'organisme corrigée doit pouvoir rattraper les avis encore ouverts.
     return { listings: notices.map((notice) => tedNoticeToListing(notice, this.organisations)).filter((l): l is Listing => l !== null), ignoredIds: [] }
+  }
+}
+
+/**
+ * Recherche chez tous les acheteurs (all-buyers.ts) : source à part, avec sa clé dans le fichier d'état (même raison que
+ * BoampAllBuyersSource). Les avis d'un organisme suivi sont laissés à la source TED (pas de doublon).
+ */
+export class TedAllBuyersSource implements ListingSource {
+  readonly id = 'ted-tous-acheteurs'
+  readonly label = "TED (Journal officiel de l'UE) — tous les acheteurs"
+  readonly kind = 'tender'
+
+  constructor(
+    private readonly http: HttpClient,
+    private readonly now: () => Date,
+    private readonly organisations: readonly Organisation[],
+    private readonly search: AllBuyersSearch,
+  ) {}
+
+  async fetch(): Promise<SourceBatch> {
+    const today = parisDay(this.now())
+    const listings: Listing[] = []
+    const seen = new Set<string>()
+    for (const { label, query } of tedAllBuyersQueries(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today, this.search)) {
+      let notices: TedNotice[]
+      try {
+        notices = await tedNotices(this.http, query)
+      } catch (error) {
+        throw new Error(`${label} : ${error instanceof Error ? error.message : String(error)}`)
+      }
+      for (const notice of notices) {
+        if (seen.has(notice['publication-number'])) continue
+        const listing = tedNoticeToListing(notice, this.organisations, { allBuyers: true })
+        // La recherche TED ignore l'ordre des mots et coupe les expressions : seuls les avis qui correspondent
+        // exactement sont gardés, les autres laissés de côté sans être retenus comme vus. Organisme suivi : source TED.
+        if (listing?.organisationId !== OTHER_BUYERS_ID || !isItTender(listing, this.search.rules)) continue
+        seen.add(listing.id)
+        listings.push(listing)
+      }
+    }
+    return { listings, ignoredIds: [] }
   }
 }

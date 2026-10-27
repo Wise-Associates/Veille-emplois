@@ -9,14 +9,15 @@ import type { HttpClient } from '../http/http-client.js'
 import type { ListingSource } from '../listing.js'
 import type { Organisation } from '../organisations.js'
 import { BUILTIN_SOURCE_ORGANISATIONS, type BuiltinSourceId, type VeilleSettings } from '../settings/veille-settings.js'
+import { allBuyersSearchFrom } from '../tenders/all-buyers.js'
 import { AutoriteConcurrenceSource } from './autorite-concurrence.source.js'
 import { BanquePostaleSource } from './banque-postale.source.js'
-import { BoampSource } from './boamp.source.js'
+import { BoampAllBuyersSource, BoampSource } from './boamp.source.js'
 import { ChoisirLeServicePublicSource } from './choisir-le-service-public.source.js'
 import { CrhSource } from './crh.source.js'
 import { ProparcoSource } from './proparco.source.js'
 import { RssCareersSource } from './rss-careers.source.js'
-import { TedSource } from './ted.source.js'
+import { TedAllBuyersSource, TedSource } from './ted.source.js'
 
 /** Fabrique des sources d'un passage (remplacée dans les tests). */
 export const SOURCE_FACTORY = Symbol('SOURCE_FACTORY')
@@ -37,8 +38,10 @@ const BUILTIN: Record<BuiltinSourceId, (http: HttpClient) => ListingSource> = {
 export function createSources(http: HttpClient, clock: Clock, settings: VeilleSettings, organisations: readonly Organisation[]): ListingSource[] {
   const now = () => clock.now()
   const followed = new Set(organisations.map((o) => o.id))
-  // Aucun organisme suivi pour ses appels d'offres (offres d'emploi seulement) : ni BOAMP ni TED à lire.
+  // Aucun organisme suivi pour ses appels d'offres (offres d'emploi seulement) : sources BOAMP et TED non lues.
   const tenders = organisations.some((o) => o.tenderRules.length > 0)
+  // Recherche chez tous les acheteurs : sources à part (all-buyers.ts), lues si BOAMP ou TED est activé.
+  const allBuyers = allBuyersSearchFrom(settings)
   const rank = { boamp: 0, ted: 1 } as Record<string, number>
   return settings.sources
     .filter((source) => source.enabled)
@@ -46,9 +49,15 @@ export function createSources(http: HttpClient, clock: Clock, settings: VeilleSe
     .flatMap((source): ListingSource[] => {
       switch (source.kind) {
         case 'boamp':
-          return tenders ? [new BoampSource(http, now, organisations)] : []
+          return [
+            ...(tenders ? [new BoampSource(http, now, organisations)] : []),
+            ...(allBuyers ? [new BoampAllBuyersSource(http, now, organisations, allBuyers)] : []),
+          ]
         case 'ted':
-          return tenders ? [new TedSource(http, now, organisations)] : []
+          return [
+            ...(tenders ? [new TedSource(http, now, organisations)] : []),
+            ...(allBuyers ? [new TedAllBuyersSource(http, now, organisations, allBuyers)] : []),
+          ]
         case 'builtin':
           return followed.has(BUILTIN_SOURCE_ORGANISATIONS[source.id]) ? [BUILTIN[source.id](http)] : []
         case 'csp':

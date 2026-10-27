@@ -1,8 +1,21 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { organisationsFrom } from '../organisations.js'
+import type { HttpClient } from '../http/http-client.js'
+import { OTHER_BUYERS_ID, organisationsFrom } from '../organisations.js'
 import { DEFAULT_SETTINGS } from '../settings/defaults.js'
-import { boampBuyers, boampCpvCodes, boampDescription, boampRecordToListing, boampWhere, extractBoampBuyers, type BoampRecord } from './boamp.source.js'
+import { scopeToIt } from '../it-scope.js'
+import { allBuyersSearchFrom } from '../tenders/all-buyers.js'
+import {
+  BoampAllBuyersSource,
+  boampAllBuyersWheres,
+  boampBuyers,
+  boampCpvCodes,
+  boampDescription,
+  boampRecordToListing,
+  boampWhere,
+  extractBoampBuyers,
+  type BoampRecord,
+} from './boamp.source.js'
 
 // Avis fictifs, construits sur la structure réelle des données BOAMP (octobre 2026).
 const eforms = (organizations: { id: string; name: string; siret: string }[], buyerIds: string[]) => ({
@@ -102,6 +115,11 @@ describe('avis du BOAMP', () => {
     }
     root['cac:ProcurementProjectLot'] = [{ 'cac:ProcurementProject': { 'cbc:Name': { '#text': 'Lot fictif' } } }]
     assert.deepEqual(boampDescription(eformsWithText), { description: 'Prestations fictives de maquettage\n\nLots\n- Lot 1 : Lot fictif', location: 'Montrouge' })
+    // Lieu saisi sur plusieurs paragraphes : une seule ligne courte (ligne « Lieu » de l'e-mail).
+    root['cac:ProcurementProject'] = { 'cac:RealizedLocation': { 'cbc:Description': { '#text': `Site fictif\n\nConditions : ${'x '.repeat(200)}` } } }
+    const location = boampDescription(eformsWithText).location ?? ''
+    assert.ok(location.startsWith('Site fictif Conditions : x x') && !location.includes('\n'))
+    assert.equal(location.length, 200)
   })
 
   it('lit les codes CPV des avis européens et nationaux', () => {
@@ -160,5 +178,81 @@ describe('avis du BOAMP', () => {
     assert.ok(where.includes('nomacheteur like "agence des participations de l etat"'))
     assert.ok(where.includes('((nomacheteur like "services du premier ministre"'))
     assert.ok(where.includes('AND (donnees like "dinum" OR donnees like "direction interministerielle du numerique"))'))
+  })
+})
+
+describe('BOAMP : recherche chez tous les acheteurs', () => {
+  const settings = structuredClone(DEFAULT_SETTINGS)
+  settings.tenderKeywords = {
+    allBuyers: true,
+    families: [{ id: 'donnees', label: 'Données', phrases: ['gouvernance des donnees', 'developpement d application*'], acronyms: ['MDM'] }],
+    infrastructurePhrases: ['fourniture de serveurs'],
+  }
+  const search = allBuyersSearchFrom(settings)
+  assert.ok(search)
+  const donnees = (name: string, description = 'Objet détaillé fictif.') =>
+    JSON.stringify({ FNSimple: { organisme: { nomOfficiel: name }, initial: { description: { objet: description } } } })
+  /** Faux BOAMP : avis légers selon la requête, avis complets pour `idweb IN`. */
+  const fakeHttp = (answer: (where: string, light: boolean) => BoampRecord[], full: Map<string, BoampRecord>, fullRequests: string[] = []) =>
+    ({
+      json: async (url: string, schema: { parse(value: unknown): unknown }) => {
+        const params = new URL(url).searchParams
+        const where = params.get('where') ?? ''
+        let results: BoampRecord[]
+        if (where.startsWith('idweb IN')) {
+          fullRequests.push(where)
+          results = [...full.values()].filter((record) => where.includes(`"${record.idweb}"`))
+        } else results = answer(where, params.has('select'))
+        return schema.parse({ total_count: results.length, results })
+      },
+    }) as unknown as HttpClient
+  const fetchWith = (http: HttpClient, known: string[] = []) =>
+    new BoampAllBuyersSource(http, () => new Date('2026-10-22T05:00:00Z'), organisationsFrom(settings), search).fetch({ isKnown: (id) => known.includes(id) })
+
+  it('cherche les avis classés informatique, puis chaque famille dans l\'objet, sans mot d\'une lettre ni clause vide', () => {
+    const wheres = boampAllBuyersWheres('2026-06-24', '2026-10-22', search)
+    assert.deepEqual(wheres.map((w) => w.label), ['Avis classés informatique', 'Famille « Données »'])
+    assert.ok(wheres.every(({ where }) => where.startsWith(`dateparution>=date'2026-06-24' AND`) && where.includes('etat="INITIAL"')))
+    assert.match(wheres[0]?.where ?? '', /\(descripteur_libelle="Informatique \(prestations de services\)" OR descripteur_libelle="Logiciel"\)$/)
+    assert.match(wheres[1]?.where ?? '', /\(search\(objet,"gouvernance des donnees"\) OR search\(objet,"developpement application"\) OR search\(objet,"mdm"\)\)$/)
+    assert.deepEqual(boampAllBuyersWheres('2026-06-24', '2026-10-22', { ...search, families: [], boampDescriptors: [] }), [])
+  })
+
+  it('garde les avis exacts d\'autres acheteurs sous leur nom, laisse ceux des organismes suivis à la source BOAMP, et ne relit en entier que les avis inconnus', async () => {
+    const light = {
+      unknown: record({ idweb: '26-000010', objet: 'Mission de gouvernance des données fictive', nomacheteur: 'Commune fictive' }),
+      disordered: record({ idweb: '26-000011', objet: 'Données fictives : gouvernance des voiries', nomacheteur: 'Commune fictive' }),
+      known: record({ idweb: '26-000012', objet: 'Prestations fictives', nomacheteur: 'Département fictif', descripteur_libelle: ['Logiciel'] }),
+      followed: record({ idweb: '26-000013', nomacheteur: 'Direction générale des finances publiques', descripteur_libelle: ['Logiciel'] }),
+    }
+    const full = new Map([['26-000010', { ...light.unknown, donnees: donnees('Commune fictive') }]])
+    const fullRequests: string[] = []
+    const http = fakeHttp((where) => (where.includes('descripteur_libelle=') ? [light.known, light.followed] : [light.unknown, light.disordered]), full, fullRequests)
+    const batch = await fetchWith(http, ['26-000012'])
+
+    assert.deepEqual(batch.listings.map((l) => l.id), ['26-000012', '26-000010'], 'avis au désordre et avis de la DGFiP écartés')
+    assert.deepEqual(fullRequests, ['idweb IN ("26-000010")'], 'avis déjà connu non relu')
+    const other = batch.listings.find((l) => l.id === '26-000010')
+    assert.equal(other?.organisationId, OTHER_BUYERS_ID)
+    assert.equal(other?.buyer, 'Commune fictive')
+    assert.equal(other?.description, 'Objet détaillé fictif.')
+    assert.deepEqual(batch.ignoredIds, [])
+  })
+
+  it('relit en entier un avis classé informatique à l\'intitulé d\'infrastructure : sa description peut contenir un mot-clé', async () => {
+    const light = record({ idweb: '26-000020', objet: 'Fourniture de serveurs fictifs', nomacheteur: 'Commune fictive', descripteur_libelle: ['Logiciel'] })
+    const full = new Map([['26-000020', { ...light, donnees: donnees('Commune fictive', 'Lot 2 : gouvernance des données.') }]])
+    const batch = await fetchWith(fakeHttp(() => [light], full))
+    assert.deepEqual(batch.listings.map((l) => l.id), ['26-000020'])
+    const scoped = scopeToIt(batch, search.rules)
+    assert.deepEqual(scoped.outOfScope, [], 'mot-clé dans la description : gardé')
+  })
+
+  it('nomme la famille de mots-clés qui ramène trop d\'avis', async () => {
+    const tooMany = Array.from({ length: 100 }, (_, i) => record({ idweb: `26-1${String(i).padStart(5, '0')}`, objet: 'Avis fictif' }))
+    const http = {
+      json: async (_url: string, schema: { parse(value: unknown): unknown }) => schema.parse({ total_count: 5000, results: tooMany }),
+    } as unknown as HttpClient
+    await assert.rejects(fetchWith(http), /^Error: Avis classés informatique : Plus de 2000 avis ouverts/)
   })
 })

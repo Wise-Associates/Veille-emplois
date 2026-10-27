@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Listing } from '../listing.js'
+import { OTHER_BUYERS_ID } from '../organisations.js'
 import { renderOfferEmail } from './offer-email.js'
 
 const job: Listing = {
@@ -25,6 +26,12 @@ describe('e-mail d\'une offre (boîte AO)', () => {
     assert.match(email.text, /^Date limite de candidature : 16\/11\/2026$/m)
     assert.match(email.text, /^Référence : 2026-0000001$/m)
     assert.match(email.text, /Description\n-+\nMissions :\n- Piloter un projet fictif\n\nProfil :\nBac\+5/)
+  })
+
+  it('prend l\'acheteur comme client d\'un avis hors organismes suivis (recherche chez tous les acheteurs)', () => {
+    const email = renderOfferEmail({ ...job, kind: 'tender', organisationId: OTHER_BUYERS_ID, buyer: 'Commune fictive' })
+    assert.match(email.subject, /^Appel d'offres — Commune fictive — /)
+    assert.match(email.text, /^Client : Commune fictive$/m)
   })
 
   it('nomme la date limite de réponse d\'un appel d\'offres, à l\'heure de Paris', () => {

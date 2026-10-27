@@ -31,6 +31,50 @@ describe('périmètre informatique : appels d\'offres', () => {
   })
 })
 
+describe('périmètre informatique : mots-clés des appels d\'offres', () => {
+  it('retient un avis classé hors informatique dont l\'intitulé ou la description contient un mot-clé', () => {
+    assert.equal(isItTender({ title: 'Accompagnement fictif à la gouvernance des données', cpv: ['79411000'] }), true, 'conseil (CPV 79)')
+    assert.equal(
+      isItTender({ title: 'Accompagnement fictif de la direction financière', description: 'Lot 2 : mise en place d\'un data steward.', cpv: ['79411000'] }),
+      true,
+      'mot-clé dans la description',
+    )
+    assert.equal(isItTender({ title: 'Refonte du site internet de la commune fictive', descriptors: ['Communication'] }), true)
+  })
+
+  it('écarte les termes trop larges relevés sur les vrais avis (bâtiment, communication, formation)', () => {
+    assert.equal(isItTender({ title: 'Assistance à maîtrise d\'ouvrage fictive pour la construction d\'un gymnase', cpv: ['71000000'] }), false)
+    assert.equal(isItTender({ title: 'Refonte fictive de la signalétique', cpv: ['79822500'] }), false)
+    assert.equal(isItTender({ title: 'Formations fictives à la gestion des risques', cpv: ['80500000'] }), false)
+    assert.equal(isItTender({ title: 'Abonnement fictif à des bases de données juridiques', cpv: ['79980000'] }), false)
+  })
+
+  it('ne retient pas un mot-clé quand l\'intitulé contient une exclusion, et ne cherche les exclusions que dans l\'intitulé', () => {
+    assert.equal(isItTender({ title: 'Travaux fictifs avec logiciel de supervision', cpv: ['45300000'] }), false)
+    assert.equal(
+      isItTender({ title: 'Prestations fictives', description: 'Travaux de développement : tierce maintenance applicative.', cpv: ['79000000'] }),
+      true,
+    )
+  })
+
+  it('ne reconnaît les sigles des mots-clés qu\'en majuscules', () => {
+    assert.equal(isItTender({ title: 'Prestations fictives de TMA', cpv: ['79000000'] }), true)
+    assert.equal(isItTender({ title: 'Prestations fictives de tma', cpv: ['79000000'] }), false)
+  })
+
+  it('écarte un avis classé informatique dont l\'intitulé ne parle que d\'infrastructure, sauf avec un mot-clé', () => {
+    assert.equal(isItTender({ title: 'Fourniture de serveurs fictifs', cpv: ['72500000'] }), false)
+    assert.equal(isItTender({ title: 'Fourniture de serveurs fictifs et d\'un logiciel de sauvegarde', cpv: ['72500000'] }), true)
+    assert.equal(isItTender({ title: 'Prestations informatiques fictives', cpv: ['72500000'] }), true, 'rien ne dit infrastructure')
+  })
+
+  it('sans mot-clé dans les réglages, garde la règle d\'avant (classification, puis intitulé)', () => {
+    const rules = itRulesFrom({ ...DEFAULT_SETTINGS, tenderKeywords: { allBuyers: false, families: [], infrastructurePhrases: [] } })
+    assert.equal(isItTender({ title: 'Accompagnement fictif à la gouvernance des données', cpv: ['79411000'] }, rules), false)
+    assert.equal(isItTender({ title: 'Fourniture de serveurs fictifs', cpv: ['72500000'] }, rules), true)
+  })
+})
+
 describe('périmètre informatique : offres d\'emploi', () => {
   it('retient les métiers techniques, données, cybersécurité, projets SI et numérique', () => {
     assert.equal(job('Développeur fictif Java H/F'), true)
@@ -85,7 +129,10 @@ describe('lecture réduite au périmètre informatique', () => {
   })
 
   it('compare une expression saisie avec accents et majuscules comme celles du dépôt', () => {
-    const rules = itRulesFrom({ ...DEFAULT_SETTINGS.itScope, phrases: ['Ingénieur Données*'], acronyms: ['PAIE'], exclusionPhrases: [] })
+    const rules = itRulesFrom({
+      ...DEFAULT_SETTINGS,
+      itScope: { ...DEFAULT_SETTINGS.itScope, phrases: ['Ingénieur Données*'], acronyms: ['PAIE'], exclusionPhrases: [] },
+    })
     assert.equal(mentionsIt('INGENIEUR DONNEES FICTIF (H/F)', rules), true, 'accents et majuscules ignorés')
     assert.equal(mentionsIt('Développeur fictif', rules), false, 'les expressions du dépôt sont remplacées')
     assert.equal(mentionsIt('Chef de projet PAIE fictif', rules), true)

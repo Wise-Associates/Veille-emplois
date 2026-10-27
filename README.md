@@ -7,7 +7,8 @@ administrateur). L'équipe reçoit en plus un récapitulatif quotidien.
 
 Organismes : DGFiP (et son réseau régional et départemental pour les marchés), DINUM, INSEE, ASP, APE, Urssaf Caisse
 nationale (ACOSS), CNAM, UCANSS (marchés), La Banque Postale, SFIL, CRH, Cour des comptes, Autorité de la concurrence,
-Proparco, Expertise France.
+Proparco, Expertise France. Pour les appels d'offres, la veille cherche aussi chez **tous les acheteurs publics**, par
+mots-clés (SaaS, digitalisation, données, IA, TMA…, voir « Périmètre informatique »).
 
 - Appels d'offres : BOAMP et TED (Journal officiel de l'UE), par leurs API officielles.
 - Offres d'emploi : Choisir le service public (flux RSS) et les sites carrières des organismes.
@@ -28,13 +29,14 @@ Proparco, Expertise France.
 4. Seules les offres **informatiques** sont envoyées (voir « Périmètre informatique ») : les autres sont retenues
    comme vues, jamais envoyées, et comptées dans le récapitulatif (« hors projets informatiques »).
 5. Chaque nouvelle offre part dans **son propre e-mail** vers la boîte AO (`OFFERS_TO`) : intitulé, client
-   (l'organisme), lieu, précisions, dates, référence, lien, puis le texte complet. Quand la liste de la source ne
+   (l'organisme ; pour un acheteur non suivi, l'acheteur lui-même), lieu, précisions, dates, référence, lien, puis le texte complet. Quand la liste de la source ne
    donne pas tout, la page de l'offre est lue au moment de l'envoyer (Choisir le service public : employeur exact et
    date limite ; Expertise France et La Banque Postale : texte de l'offre).
 6. Au plus `MAX_OFFER_EMAILS_PER_RUN` offres par passage (200 par défaut), une par seconde, et aucune nouvelle offre
    commencée après 25 minutes de passage ; appels d'offres d'abord. Les autres attendent le passage suivant.
-   **Le premier passage** trouve toutes les offres informatiques en ligne (environ 150 en octobre 2026) : elles
-   partent en un ou deux passages, ou plus vite en relançant le workflow à la main.
+   **Le premier passage** trouve toutes les offres informatiques en ligne (435 le 27/10/2026, dont environ 390
+   appels d'offres de tous les acheteurs) : elles partent en trois passages, ou plus vite en relançant le workflow à
+   la main.
 7. Une offre dont la date limite est déjà passée (souvent connue par la page de l'offre) n'est pas envoyée ; elle est
    retenue comme traitée et comptée dans le récapitulatif.
 8. Une offre n'est retenue comme envoyée qu'une fois son e-mail accepté par le serveur : si le serveur refuse
@@ -68,11 +70,25 @@ Décision du 23/10/2026 ([docs/adr/0004-perimetre-informatique.md](docs/adr/0004
 dans `src/it-scope.ts`, valeurs (codes CPV, descripteurs, expressions, sigles, exclusions) dans les **réglages**
 (voir « Réglages ») :
 
-- **Appels d'offres** : services informatiques et logiciels, d'après la classification européenne de l'avis (CPV 72
-  « services informatiques », CPV 48 « logiciels et systèmes d'information ») ou les descripteurs du BOAMP
-  (« Informatique (prestations de services) », « Logiciel »). Hors périmètre : matériel (CPV 30), maintenance (50),
-  télécommunications (64), travaux (45), même pour un intitulé informatique. Un avis sans aucune classification
-  (petits avis) est jugé sur son intitulé.
+- **Appels d'offres** (règles complétées le 27/10/2026,
+  [docs/adr/0006-appels-d-offres-de-tous-les-acheteurs.md](docs/adr/0006-appels-d-offres-de-tous-les-acheteurs.md)) :
+  - un **mot-clé des appels d'offres** (10 familles : SaaS et logiciels, développement, refonte et TMA,
+    digitalisation, gouvernance et plateformes de données, BI, IA, conseil SI / AMOA, outils de risques et de
+    conformité) dans l'intitulé ou la description suffit, quelle que soit la classification ; une exclusion
+    (« travaux »…) dans l'intitulé l'annule ;
+  - sinon, services informatiques et logiciels d'après la classification européenne de l'avis (CPV 72 « services
+    informatiques », CPV 48 « logiciels et systèmes d'information ») ou les descripteurs du BOAMP (« Informatique
+    (prestations de services) », « Logiciel »), sauf un intitulé d'**infrastructure seule** (serveurs, réseau,
+    matériel, antennes relais) ;
+  - hors périmètre sans mot-clé : matériel (CPV 30), maintenance (50), télécommunications (64), travaux (45), même
+    pour un intitulé informatique. Un avis sans aucune classification (petits avis) est jugé sur son intitulé.
+
+  **Tous les acheteurs** (réglage activé par défaut) : au BOAMP et dans TED, une recherche par famille de mots-clés dans
+  l'intitulé des avis, plus les avis classés informatique, revérifiés sur les expressions exactes. Sources à part dans
+  le récapitulatif et le fichier d'état (« BOAMP — tous les acheteurs », « TED — tous les acheteurs ») : elles ne gardent
+  que les acheteurs non suivis, dont les avis partent sous « Autres acheteurs », avec l'acheteur comme client. Les termes trop larges de la liste de départ
+  (« assistance à maîtrise d'ouvrage » seul, « refonte » seul, « reporting »…) ont été retirés après mesure : voir
+  l'ADR 0006.
 - **Offres d'emploi** : métiers techniques, données / IA / cybersécurité, projets informatiques et SI métier (MOA,
   business analyst, ERP), métiers du numérique (UX/UI, web), d'après l'intitulé et la catégorie donnée par la source
   (domaine « Numérique » de Choisir le service public, département d'Expertise France). Les sigles (SI, DSI, MOA…) ne
@@ -84,7 +100,8 @@ Limites connues : des offres d'Expertise France liées à un programme d'« éco
 métiers informatiques ; un intitulé sans aucun mot informatique (« Ingénieur d'études » sans précision, projet nommé
 par l'adresse de son site) est écarté.
 
-- **Ajuster les valeurs** (expressions, codes CPV…) : onglet « Filtre informatique » de l'admin de MyBestConsultant,
+- **Ajuster les valeurs** (expressions, codes CPV…) : onglets « Filtre informatique » et « Mots-clés des appels
+  d'offres » de l'admin de MyBestConsultant,
   pris en compte au passage suivant ; vérifier sur les offres réelles avec `npm run veille:essai` (avec
   `VEILLE_CONFIG_URL` et `VEILLE_CONFIG_TOKEN`), dont le journal donne, par source, le nombre d'annonces informatiques et
   hors informatique. **Changer la logique** (classification d'abord, sigles en majuscules…) : `src/it-scope.ts`, avec le
@@ -120,7 +137,8 @@ Pour un essai d'envoi, mettre une boîte de test dans `OFFERS_TO` et un petit `M
 Décision du 27/10/2026 ([docs/adr/0005-reglages-dans-mybestconsultant.md](docs/adr/0005-reglages-dans-mybestconsultant.md)).
 Les **organismes suivis** (nom, SIREN, noms d'acheteur, exclusions), les **sources** (BOAMP, TED et sites intégrés :
 activés ou non ; Choisir le service public : codes d'organisme ; flux RSS de sites carrières) et le **filtre
-informatique** se modifient dans l'admin de MyBestConsultant (menu « Veille »), qui les enregistre en versions. Chaque
+informatique** et les **mots-clés des appels d'offres** (recherche chez tous les acheteurs) se modifient dans l'admin
+de MyBestConsultant (menu « Veille »), qui les enregistre en versions. Chaque
 passage les lit au début (`GET /api/veille/config`, jeton `VEILLE_CONFIG_TOKEN`, 15 s, une nouvelle tentative) :
 
 - MyBestConsultant répond : ses réglages, gardés dans `etat.json` (`settings`) comme dernière version connue ;
@@ -213,6 +231,8 @@ utilisée quand il ne répond pas. Chaque passage ajoute un commit : l'historiqu
 | Récapitulatif de l'équipe | `src/digest/digest.ts` |
 | Calcul des nouveautés, ordre d'envoi, alertes de volume | `src/state/run-state.ts` |
 | Valeurs du périmètre informatique (codes CPV, expressions, sigles) | admin de MyBestConsultant, « Veille » → Filtre informatique |
+| Mots-clés des appels d'offres, tous les acheteurs, infrastructure seule | admin de MyBestConsultant, « Veille » → Mots-clés des appels d'offres |
+| Recherche chez tous les acheteurs (requêtes BOAMP / TED) | `src/tenders/all-buyers.ts`, `boampAllBuyersWheres`, `tedAllBuyersQueries` |
 | Logique du périmètre informatique | `src/it-scope.ts`, cas dans `src/it-scope.spec.ts` |
 
 Quand une source apparaît dans « Points à vérifier » plusieurs jours de suite, ouvrir sa page dans un navigateur,
@@ -231,6 +251,7 @@ src/
   it-scope.ts             périmètre informatique (offres envoyées ou écartées)
   phrases.ts              comparaison d'expressions sans accents ni majuscules
   tenders/buyer-match.ts  reconnaissance de l'acheteur d'un avis
+  tenders/all-buyers.ts   recherche chez tous les acheteurs (mots-clés, classification)
   sources/                une source par fichier (BOAMP, TED, Choisir le service public, sites carrières)
   state/                  calcul des nouveautés (règles pures) et fichier d'état
   digest/                 e-mail d'une offre, récapitulatif, mise en forme commune
