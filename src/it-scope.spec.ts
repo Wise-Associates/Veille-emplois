@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isItJob, isItTender, mentionsIt, scopeToIt } from './it-scope.js'
+import { DEFAULT_IT_RULES, itRulesFrom, isItJob, isItTender, mentionsIt, scopeToIt } from './it-scope.js'
+import { DEFAULT_SETTINGS } from './settings/defaults.js'
 import type { Listing } from './listing.js'
 
 const job = (title: string, details: string[] = []) => isItJob({ title, details })
@@ -74,5 +75,19 @@ describe('lecture réduite au périmètre informatique', () => {
     assert.deepEqual(batch.listings.map((l) => l.id), ['A'])
     assert.deepEqual(batch.ignoredIds, ['X', 'B'])
     assert.deepEqual(outOfScope, ['B'])
+  })
+
+  it('garde toutes les offres quand le filtre est désactivé dans les réglages', () => {
+    const listing: Listing = { kind: 'job', id: 'B', organisationId: 'dinum', title: 'Juriste fictif', url: 'https://exemple.test/B', details: [] }
+    const { batch, outOfScope } = scopeToIt({ listings: [listing], ignoredIds: [] }, { ...DEFAULT_IT_RULES, enabled: false })
+    assert.deepEqual(batch.listings.map((l) => l.id), ['B'])
+    assert.deepEqual(outOfScope, [])
+  })
+
+  it('compare une expression saisie avec accents et majuscules comme celles du dépôt', () => {
+    const rules = itRulesFrom({ ...DEFAULT_SETTINGS.itScope, phrases: ['Ingénieur Données*'], acronyms: ['PAIE'], exclusionPhrases: [] })
+    assert.equal(mentionsIt('INGENIEUR DONNEES FICTIF (H/F)', rules), true, 'accents et majuscules ignorés')
+    assert.equal(mentionsIt('Développeur fictif', rules), false, 'les expressions du dépôt sont remplacées')
+    assert.equal(mentionsIt('Chef de projet PAIE fictif', rules), true)
   })
 })

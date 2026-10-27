@@ -1,0 +1,652 @@
+{
+  "schemaVersion": 1,
+  "organisations": [
+    {
+      "id": "dgfip",
+      "name": "DGFiP",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "130004955"
+          ],
+          "names": [
+            "direction generale des finances publiques",
+            "direction generale finances publiques",
+            "dgfip"
+          ],
+          "excludedNames": [
+            "aafip",
+            "arfip",
+            "association"
+          ],
+          "requiredText": [],
+          "note": "Associations du personnel : pas des achats de la DGFiP."
+        }
+      ]
+    },
+    {
+      "id": "dgfip-reseau",
+      "name": "DGFiP — directions régionales et départementales",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [],
+          "names": [
+            "drfip",
+            "ddfip",
+            "direction regionale des finances publiques",
+            "direction departementale des finances publiques"
+          ],
+          "excludedNames": [
+            "aafip",
+            "arfip",
+            "association",
+            "ecole nationale des finances publiques"
+          ],
+          "requiredText": [],
+          "note": "Associations du personnel et école : pas des achats du réseau."
+        }
+      ]
+    },
+    {
+      "id": "dinum",
+      "name": "DINUM",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "130025265"
+          ],
+          "names": [
+            "dinum",
+            "direction interministerielle du numerique"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        },
+        {
+          "sirens": [],
+          "names": [
+            "services du premier ministre",
+            "premier ministre",
+            "spm dsaf",
+            "dsaf"
+          ],
+          "excludedNames": [],
+          "requiredText": [
+            "dinum",
+            "direction interministerielle du numerique"
+          ],
+          "note": "La DINUM n'achète pas en son nom : ses marchés passent par les Services du Premier ministre (SPM-DSAF), qui achètent aussi pour d'autres services. Seuls ceux qui la citent sont retenus."
+        }
+      ]
+    },
+    {
+      "id": "insee",
+      "name": "INSEE",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "120027016"
+          ],
+          "names": [
+            "insee",
+            "institut national de la statistique*"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "asp",
+      "name": "ASP (Agence de services et de paiement)",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "130006372"
+          ],
+          "names": [
+            "agence de services et de paiement",
+            "agence de service et de paiement",
+            "agences de services et de paiement",
+            "a s p"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "ape",
+      "name": "APE (Agence des participations de l'État)",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "130004989"
+          ],
+          "names": [
+            "agence des participations de l etat"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "acoss",
+      "name": "Urssaf Caisse nationale (ACOSS)",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "180035016"
+          ],
+          "names": [
+            "acoss",
+            "urssaf caisse nationale",
+            "agence centrale des organismes de securite sociale"
+          ],
+          "excludedNames": [],
+          "requiredText": [],
+          "note": "Jamais « urssaf » seul : une quarantaine d'Urssaf régionales achètent en leur nom."
+        }
+      ]
+    },
+    {
+      "id": "cnam",
+      "name": "CNAM (Caisse nationale de l'Assurance Maladie)",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "180035024"
+          ],
+          "names": [
+            "caisse nationale de l assurance maladie",
+            "caisse nationale d assurance maladie",
+            "caisse nationale assurance maladie",
+            "caisse nationale de l assur maladie",
+            "cnam"
+          ],
+          "excludedNames": [
+            "conservatoire",
+            "arts et metiers"
+          ],
+          "requiredText": [],
+          "note": "« CNAM » désigne aussi le Conservatoire national des arts et métiers."
+        }
+      ]
+    },
+    {
+      "id": "ucanss",
+      "name": "UCANSS (achats mutualisés de la Sécurité sociale)",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "784621435"
+          ],
+          "names": [
+            "ucanss",
+            "union des caisses nationales de securite sociale"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "banque-postale",
+      "name": "La Banque Postale",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "421100645"
+          ],
+          "names": [
+            "banque postale"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "sfil",
+      "name": "SFIL",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "428782585",
+            "421318064"
+          ],
+          "names": [
+            "sfil",
+            "caffil",
+            "caisse francaise de financement local"
+          ],
+          "excludedNames": [],
+          "requiredText": [],
+          "note": "421318064 : CAFFIL, filiale de refinancement de SFIL."
+        }
+      ]
+    },
+    {
+      "id": "crh",
+      "name": "CRH (Caisse de Refinancement de l'Habitat)",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "333614980"
+          ],
+          "names": [
+            "caisse de refinancement de l habitat"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "cour-des-comptes",
+      "name": "Cour des comptes",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "110000288"
+          ],
+          "names": [
+            "cour des comptes"
+          ],
+          "excludedNames": [
+            "europeenne"
+          ],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "autorite-concurrence",
+      "name": "Autorité de la concurrence",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "110000163"
+          ],
+          "names": [
+            "autorite de la concurrence"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "proparco",
+      "name": "Proparco",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "310792205"
+          ],
+          "names": [
+            "proparco*"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    },
+    {
+      "id": "expertise-france",
+      "name": "Expertise France",
+      "enabled": true,
+      "tenderRules": [
+        {
+          "sirens": [
+            "808734792"
+          ],
+          "names": [
+            "expertise france"
+          ],
+          "excludedNames": [],
+          "requiredText": []
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "kind": "boamp",
+      "id": "boamp",
+      "enabled": true
+    },
+    {
+      "kind": "ted",
+      "id": "ted",
+      "enabled": true
+    },
+    {
+      "kind": "csp",
+      "id": "csp-dgfip",
+      "enabled": true,
+      "organisationId": "dgfip",
+      "label": "Choisir le service public — DGFiP",
+      "codes": [
+        "974"
+      ]
+    },
+    {
+      "kind": "csp",
+      "id": "csp-dinum",
+      "enabled": true,
+      "organisationId": "dinum",
+      "label": "Choisir le service public — DINUM",
+      "codes": [
+        "10668"
+      ]
+    },
+    {
+      "kind": "csp",
+      "id": "csp-insee",
+      "enabled": true,
+      "organisationId": "insee",
+      "label": "Choisir le service public — INSEE",
+      "codes": [
+        "978"
+      ]
+    },
+    {
+      "kind": "csp",
+      "id": "csp-asp",
+      "enabled": true,
+      "organisationId": "asp",
+      "label": "Choisir le service public — ASP",
+      "codes": [
+        "1422"
+      ]
+    },
+    {
+      "kind": "csp",
+      "id": "csp-ape",
+      "enabled": true,
+      "organisationId": "ape",
+      "label": "Choisir le service public — APE",
+      "codes": [
+        "1012"
+      ]
+    },
+    {
+      "kind": "csp",
+      "id": "csp-cour-des-comptes",
+      "enabled": true,
+      "organisationId": "cour-des-comptes",
+      "label": "Choisir le service public — Cour des comptes et chambres régionales",
+      "codes": [
+        "23"
+      ]
+    },
+    {
+      "kind": "csp",
+      "id": "csp-autorite-concurrence",
+      "enabled": true,
+      "organisationId": "autorite-concurrence",
+      "label": "Choisir le service public — Autorité de la concurrence",
+      "codes": [
+        "24",
+        "13385"
+      ]
+    },
+    {
+      "kind": "builtin",
+      "id": "autorite-concurrence-carrieres",
+      "enabled": true
+    },
+    {
+      "kind": "builtin",
+      "id": "banque-postale-carrieres",
+      "enabled": true
+    },
+    {
+      "kind": "rss",
+      "id": "sfil-carrieres",
+      "enabled": true,
+      "organisationId": "sfil",
+      "label": "SFIL — site carrières",
+      "url": "https://sfil.fr/offres-emploi/feed/",
+      "readOfferPage": false
+    },
+    {
+      "kind": "builtin",
+      "id": "crh-site",
+      "enabled": true
+    },
+    {
+      "kind": "builtin",
+      "id": "afd-carrieres",
+      "enabled": true
+    },
+    {
+      "kind": "rss",
+      "id": "expertise-france-carrieres",
+      "enabled": true,
+      "organisationId": "expertise-france",
+      "label": "Expertise France — site carrières",
+      "url": "https://expertise-france.gestmax.fr/feed/rss/lang/fr_FR?limit=200",
+      "readOfferPage": true
+    }
+  ],
+  "itScope": {
+    "enabled": true,
+    "cpvPrefixes": [
+      "72",
+      "48"
+    ],
+    "boampDescriptors": [
+      "Informatique (prestations de services)",
+      "Logiciel"
+    ],
+    "phrases": [
+      "informatique",
+      "informatiques",
+      "informaticien*",
+      "numerique",
+      "numeriques",
+      "digital*",
+      "digitaux",
+      "dematerialisation",
+      "logiciel",
+      "logiciels",
+      "progiciel*",
+      "systeme d information",
+      "systemes d information",
+      "systeme d informations",
+      "systemes d informations",
+      "saas",
+      "cloud",
+      "developpeur*",
+      "developpeuse*",
+      "developpement informatique",
+      "developpement logiciel",
+      "developpement web",
+      "developpement d applications",
+      "full stack",
+      "fullstack",
+      "back end",
+      "backend",
+      "front end",
+      "frontend",
+      "devops",
+      "devsecops",
+      "kubernetes",
+      "java",
+      "python",
+      "javascript",
+      "typescript",
+      "php",
+      "react",
+      "angular",
+      "architecte logiciel",
+      "architecte technique",
+      "architecte solution*",
+      "architecte cloud",
+      "architecte data",
+      "architecte d entreprise",
+      "architecte applicatif",
+      "architecte reseau*",
+      "architecte securite",
+      "architecte des systemes",
+      "tech lead",
+      "techlead",
+      "lead dev",
+      "ingenieur logiciel",
+      "ingenieur developpement",
+      "ingenieur systeme*",
+      "ingenieur reseau*",
+      "ingenieur cloud",
+      "ingenieur securite",
+      "administrateur systeme*",
+      "administrateur reseau*",
+      "administrateur d outils",
+      "administratrice systeme*",
+      "technicien informatique",
+      "technicien reseau*",
+      "technicienne informatique",
+      "technicien support",
+      "support informatique",
+      "support utilisateur*",
+      "helpdesk",
+      "help desk",
+      "service desk",
+      "poste de travail",
+      "postes de travail",
+      "exploitation informatique",
+      "production informatique",
+      "infrastructure informatique",
+      "infrastructures informatiques",
+      "systemes et reseaux",
+      "reseaux et telecom*",
+      "testeur",
+      "testeuse",
+      "test logiciel",
+      "tests logiciels",
+      "recette applicative",
+      "integrateur",
+      "integratrice",
+      "applicatif",
+      "applicative",
+      "applicatifs",
+      "applicatives",
+      "responsable d applications",
+      "gestionnaire d applications",
+      "api",
+      "data",
+      "big data",
+      "datascience",
+      "science des donnees",
+      "sciences des donnees",
+      "ingenieur de donnees",
+      "ingenieur des donnees",
+      "analyste de donnees",
+      "architecte de donnees",
+      "gestion des donnees",
+      "gouvernance des donnees",
+      "base de donnees",
+      "bases de donnees",
+      "entrepot de donnees",
+      "donnees massives",
+      "decisionnel",
+      "decisionnelle",
+      "business intelligence",
+      "intelligence artificielle",
+      "machine learning",
+      "apprentissage automatique",
+      "cybersecurite",
+      "cyber",
+      "cybersecurity",
+      "securite informatique",
+      "securite des systemes d information",
+      "pentest*",
+      "risque informatique",
+      "risques informatiques",
+      "chef de projet informatique",
+      "chef de projet technique",
+      "cheffe de projet informatique",
+      "product owner",
+      "product manager",
+      "proxy po",
+      "scrum",
+      "agile",
+      "maitrise d ouvrage",
+      "business analyst",
+      "analyste fonctionnel*",
+      "analyste metier",
+      "consultant fonctionnel",
+      "consultante fonctionnelle",
+      "erp",
+      "sap",
+      "oracle",
+      "workday",
+      "salesforce",
+      "sirh",
+      "crm",
+      "web*",
+      "internet",
+      "intranet",
+      "site internet",
+      "application mobile",
+      "applications mobiles",
+      "ux",
+      "ui",
+      "ergonome",
+      "ux designer",
+      "designer ux"
+    ],
+    "acronyms": [
+      "SI",
+      "DSI",
+      "IT",
+      "IA",
+      "AI",
+      "BI",
+      "ERP",
+      "SAP",
+      "SIRH",
+      "SIG",
+      "SSI",
+      "RSSI",
+      "SOC",
+      "MOA",
+      "MOE",
+      "AMOA",
+      "PMO",
+      "UX",
+      "UI",
+      "QA",
+      "SRE",
+      "DBA",
+      "PO",
+      "CRM",
+      "API",
+      "ETL",
+      "TMA",
+      "CTO",
+      "CIO"
+    ],
+    "exclusionPhrases": [
+      "travaux",
+      "maitrise d ouvrage deleguee"
+    ]
+  }
+}

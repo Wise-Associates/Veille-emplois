@@ -3,7 +3,7 @@
 
 import { frenchDay } from '../dates.js'
 import type { Listing, ListingKind } from '../listing.js'
-import { ORGANISATIONS } from '../organisations.js'
+import { ORGANISATIONS, type Organisation } from '../organisations.js'
 import type { RunReport } from '../state/run-state.js'
 import { escapeHtml, metaParts, plural, safeUrl, STYLE, type RenderedEmail } from './format.js'
 
@@ -32,8 +32,8 @@ const SECTIONS: { kind: ListingKind; title: string }[] = [
 ]
 
 /** Annonces d'une section, regroupées par organisme dans l'ordre de la liste des organismes. */
-function groups(listings: Listing[], kind: ListingKind): { name: string; listings: Listing[] }[] {
-  return ORGANISATIONS.map((organisation) => ({
+function groups(listings: Listing[], kind: ListingKind, organisations: readonly Organisation[]): { name: string; listings: Listing[] }[] {
+  return organisations.map((organisation) => ({
     name: organisation.name,
     listings: listings
       .filter((l) => l.kind === kind && l.organisationId === organisation.id)
@@ -95,7 +95,7 @@ const FOOTER =
   'Sources : BOAMP, TED, Choisir le service public et les sites carrières des organismes. ' +
   'Message envoyé automatiquement par la veille marchés et emplois.'
 
-function renderText(summary: DeliverySummary, day: string): string {
+function renderText(summary: DeliverySummary, day: string, organisations: readonly Organisation[]): string {
   const lines = [`Veille du ${frenchDay(day)}`, '']
   const problems = problemLines(summary)
   if (problems.length) lines.push('⚠ Points à vérifier', ...problems.map((p) => `- ${p}`), '')
@@ -105,7 +105,7 @@ function renderText(summary: DeliverySummary, day: string): string {
   if (outdated) lines.push(outdated, '')
   lines.push(summary.sent.length ? INTRO : "Aucune nouvelle offre envoyée aujourd'hui.", '')
   for (const section of SECTIONS) {
-    const sectionGroups = groups(summary.sent, section.kind)
+    const sectionGroups = groups(summary.sent, section.kind, organisations)
     if (!sectionGroups.length) continue
     const heading = `${section.title} (${sectionGroups.reduce((total, group) => total + group.listings.length, 0)})`
     lines.push(heading, '='.repeat(heading.length), '')
@@ -129,7 +129,7 @@ function renderListingHtml(listing: Listing): string {
   return `<li style="${STYLE.item}">${heading}${details ? `<br><span style="${STYLE.meta}">${details}</span>` : ''}</li>`
 }
 
-function renderHtml(summary: DeliverySummary, day: string): string {
+function renderHtml(summary: DeliverySummary, day: string, organisations: readonly Organisation[]): string {
   const parts = [`<div style="${STYLE.body}">`, `<h1 style="${STYLE.h1}">Veille du ${frenchDay(day)}</h1>`]
   const problems = problemLines(summary)
   if (problems.length) {
@@ -145,7 +145,7 @@ function renderHtml(summary: DeliverySummary, day: string): string {
   if (outdated) parts.push(`<p style="${STYLE.meta}">${escapeHtml(outdated)}</p>`)
   parts.push(`<p>${summary.sent.length ? INTRO : "Aucune nouvelle offre envoyée aujourd'hui."}</p>`)
   for (const section of SECTIONS) {
-    const sectionGroups = groups(summary.sent, section.kind)
+    const sectionGroups = groups(summary.sent, section.kind, organisations)
     if (!sectionGroups.length) continue
     const count = sectionGroups.reduce((total, group) => total + group.listings.length, 0)
     parts.push(`<h2 style="${STYLE.h2}">${section.title} (${count})</h2>`)
@@ -157,6 +157,7 @@ function renderHtml(summary: DeliverySummary, day: string): string {
   return parts.join('\n')
 }
 
-export function renderDigest(summary: DeliverySummary, day: string): RenderedEmail {
-  return { subject: subject(summary, day), text: renderText(summary, day), html: renderHtml(summary, day) }
+/** `organisations` : organismes du passage, dans l'ordre des réglages (regroupement des offres). */
+export function renderDigest(summary: DeliverySummary, day: string, organisations: readonly Organisation[] = ORGANISATIONS): RenderedEmail {
+  return { subject: subject(summary, day), text: renderText(summary, day, organisations), html: renderHtml(summary, day, organisations) }
 }

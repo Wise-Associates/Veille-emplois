@@ -24,7 +24,15 @@ export interface RequestOptions {
   timeoutMs?: number
   /** Nouvelle tentative sur une panne passagère (par défaut oui). */
   retry?: boolean
+  /**
+   * Adresse saisie dans les réglages : chaque redirection est vérifiée (sinon refusée) au lieu d'être suivie d'office,
+   * pour qu'un site ne puisse pas renvoyer le scanner vers une adresse interne.
+   */
+  allowRedirect?: (url: URL) => boolean
 }
+
+/** Redirections suivies au plus pour une adresse vérifiée (allowRedirect). */
+const MAX_REDIRECTS = 5
 
 /**
  * Lecture de la page d'une offre au moment de l'envoyer : délai court et sans nouvelle tentative, car elle se répète
@@ -133,13 +141,26 @@ export class HttpClient {
     }
     if (options.json !== undefined) headers['Content-Type'] = 'application/json'
     try {
-      const response = await fetch(url, {
-        method: options.method ?? (options.json !== undefined ? 'POST' : 'GET'),
-        headers,
-        body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
-        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-        redirect: 'follow',
-      })
+      // Un seul délai pour la requête, ses redirections et la lecture du corps.
+      const signal = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+      let current = url
+      let response: Response
+      for (let hop = 0; ; hop++) {
+        response = await fetch(current, {
+          method: options.method ?? (options.json !== undefined ? 'POST' : 'GET'),
+          headers,
+          body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+          signal,
+          redirect: options.allowRedirect ? 'manual' : 'follow',
+        })
+        const location = response.headers.get('location')
+        if (!options.allowRedirect || response.status < 300 || response.status >= 400 || !location) break
+        await response.body?.cancel()
+        const next = new URL(location, current)
+        if (hop >= MAX_REDIRECTS) throw new HttpError(`Trop de redirections depuis ${describe(url)}`, response.status)
+        if (!options.allowRedirect(next)) throw new HttpError(`Redirection refusée vers ${next.origin} (depuis ${describe(url)})`, response.status)
+        current = next.href
+      }
       if (!response.ok) {
         // Corps lu et jeté pour libérer la connexion.
         await response.body?.cancel()

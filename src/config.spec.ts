@@ -12,8 +12,21 @@ const mailEnv = {
 }
 
 describe('configuration', () => {
+  it('lit l\'adresse et le jeton des réglages de MyBestConsultant, toujours ensemble', () => {
+    const token = 'j'.repeat(32)
+    assert.deepEqual(loadConfig({ VEILLE_CONFIG_URL: 'https://mbc.exemple.test/api/veille/config', VEILLE_CONFIG_TOKEN: token }, true).settings,
+      { url: 'https://mbc.exemple.test/api/veille/config', token })
+    assert.deepEqual(loadConfig({ VEILLE_CONFIG_URL: 'http://localhost:3000/api/veille/config', VEILLE_CONFIG_TOKEN: token }, true).settings?.url,
+      'http://localhost:3000/api/veille/config', 'essai local')
+    assert.equal(loadConfig({ VEILLE_CONFIG_URL: '', VEILLE_CONFIG_TOKEN: '' }, true).settings, null, 'secrets GitHub non définis')
+    assert.throws(() => loadConfig({ VEILLE_CONFIG_URL: 'https://mbc.exemple.test/api/veille/config' }, true), /VEILLE_CONFIG_TOKEN/)
+    assert.throws(() => loadConfig({ VEILLE_CONFIG_URL: 'http://mbc.exemple.test/api/veille/config', VEILLE_CONFIG_TOKEN: token }, true), /https/)
+    assert.throws(() => loadConfig({ VEILLE_CONFIG_URL: 'https://mbc.exemple.test/api/veille/config', VEILLE_CONFIG_TOKEN: 'court' }, true), (error: Error) =>
+      /32 caractères/.test(error.message) && !error.message.includes('court'))
+  })
+
   it('n\'exige pas la messagerie pour un essai', () => {
-    assert.deepEqual(loadConfig({}, true), { stateFile: 'etat/etat.json', dryRun: true, maxOfferEmailsPerRun: 200, digestMode: 'always', mail: null })
+    assert.deepEqual(loadConfig({}, true), { settings: null, stateFile: 'etat/etat.json', dryRun: true, maxOfferEmailsPerRun: 200, digestMode: 'always', mail: null })
   })
 
   it('lit la messagerie, la boîte AO et les destinataires du récapitulatif', () => {

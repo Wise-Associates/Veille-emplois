@@ -78,6 +78,10 @@ jobs:
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           OFFERS_TO: ${{ secrets.OFFERS_TO }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          # Réglages (organismes, sources, filtre informatique) lus dans MyBestConsultant, ADR 0005. Non définis : ceux
+          # du dépôt (config/defaults.json), signalés dans le récapitulatif.
+          VEILLE_CONFIG_URL: ${{ secrets.VEILLE_CONFIG_URL }}
+          VEILLE_CONFIG_TOKEN: ${{ secrets.VEILLE_CONFIG_TOKEN }}
           MAX_OFFER_EMAILS_PER_RUN: ${{ vars.MAX_OFFER_EMAILS_PER_RUN }}
           # Récapitulatif : toujours pour le passage de 5 h et les lancements manuels ; pour les autres passages
           # planifiés, seulement s'il y a un point à vérifier.

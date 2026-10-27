@@ -57,6 +57,16 @@ describe('avis TED', () => {
     assert.equal(tedName('a s p'), null)
   })
 
+  it('ne produit jamais de clause vide, que TED refuse', () => {
+    const byNameOnly = tedQuery('2026-06-24', '2026-10-22', [{ id: 'fictif', name: 'Fictif', tenderRules: [{ names: ['agence fictive du numerique'] }] }])
+    assert.ok(!byNameOnly.includes('buyer-identifier IN ()'), 'aucun SIREN : pas de clause SIREN')
+    assert.match(byNameOnly, /\(buyer-name~"agence fictive du numerique"\)$/)
+    // Texte exigé coupé entièrement (« e-commerce » s'arrête au mot d'une lettre) : recherche par le nom seul.
+    const cut = tedQuery('2026-06-24', '2026-10-22', [{ id: 'fictif', name: 'Fictif', tenderRules: [{ sirens: ['123456789'], names: ['agence fictive'], requiredText: ['e commerce'] }] }])
+    assert.ok(!cut.includes('AND ()'))
+    assert.throws(() => tedQuery('2026-06-24', '2026-10-22', [{ id: 'fictif', name: 'Fictif', tenderRules: [{ names: ['a s p'] }] }]), /Aucun acheteur cherchable/)
+  })
+
   it('ne demande que les mises en concurrence françaises encore ouvertes, sans rectificatifs', () => {
     const query = tedQuery('2026-06-24', '2026-10-22')
     assert.match(

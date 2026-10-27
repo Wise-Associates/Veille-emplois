@@ -34,6 +34,15 @@ export interface AppConfig {
   digestMode: DigestMode
   /** Absente en essai uniquement. */
   mail: MailConfig | null
+  /** Réglages lus dans MyBestConsultant (ADR 0005) ; null : ceux du dépôt (config/defaults.json). */
+  settings: SettingsSourceConfig | null
+}
+
+export interface SettingsSourceConfig {
+  /** Route des réglages : https://<site MyBestConsultant>/api/veille/config. */
+  url: string
+  /** Jeton propre à cette route (VEILLE_CONFIG_TOKEN de MyBestConsultant), jamais journalisé. */
+  token: string
 }
 
 export type DigestMode = 'always' | 'problems'
@@ -57,8 +66,19 @@ const mailSchema = z.object({
   MAIL_TO: addressList,
 })
 
+const optionalText = z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), z.string().trim().optional())
+
+/** https, ou http sur la machine locale (essai contre MyBestConsultant lancé en local). */
+const settingsUrl = z.string().refine((value) => {
+  if (!URL.canParse(value)) return false
+  const url = new URL(value)
+  return url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))
+}, 'adresse https attendue (http seulement pour localhost)')
+
 const baseSchema = z.object({
   STATE_FILE: z.string().trim().min(1).default('etat/etat.json'),
+  VEILLE_CONFIG_URL: optionalText.pipe(settingsUrl.optional()),
+  VEILLE_CONFIG_TOKEN: optionalText.pipe(z.string().min(32, '32 caractères au moins').optional()),
   MAX_OFFER_EMAILS_PER_RUN: optionalInt(200, 1, 2000),
   DIGEST_MODE: z.preprocess((value) => (value === '' ? undefined : value), z.enum(['always', 'problems']).default('always')),
 })
@@ -71,7 +91,11 @@ function describeIssues(error: z.ZodError): string {
 export function loadConfig(env: Record<string, string | undefined>, dryRun: boolean): AppConfig {
   const base = baseSchema.safeParse(env)
   if (!base.success) throw new Error(`Configuration invalide — ${describeIssues(base.error)}`)
+  const { VEILLE_CONFIG_URL: url, VEILLE_CONFIG_TOKEN: token } = base.data
+  // Adresse sans jeton : la veille s'arrête ici plutôt que de tourner en silence sur les réglages du dépôt.
+  if (url && !token) throw new Error('Configuration invalide — VEILLE_CONFIG_TOKEN : obligatoire avec VEILLE_CONFIG_URL')
   const common = {
+    settings: url && token ? { url, token } : null,
     stateFile: base.data.STATE_FILE,
     dryRun,
     maxOfferEmailsPerRun: base.data.MAX_OFFER_EMAILS_PER_RUN,

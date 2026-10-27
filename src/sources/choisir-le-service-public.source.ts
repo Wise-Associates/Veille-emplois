@@ -74,18 +74,19 @@ export function parseCspOfferPage(html: string, listing: Listing): ListingDetail
 }
 
 export class ChoisirLeServicePublicSource implements ListingSource {
-  readonly id: string
   readonly kind = 'job'
 
-  /** `codes` : codes d'organisme de Choisir le service public (ceux de l'URL `…/nos-offres/filtres/organisme/<code>/`). */
+  /**
+   * `id` : clé d'état fixée par les réglages (« csp-<organisme> » pour les sources d'origine) ; `codes` : codes
+   * d'organisme de Choisir le service public (ceux de l'URL `…/nos-offres/filtres/organisme/<code>/`).
+   */
   constructor(
     private readonly http: HttpClient,
+    readonly id: string,
     private readonly organisationId: OrganisationId,
     readonly label: string,
     private readonly codes: string[],
-  ) {
-    this.id = `csp-${organisationId}`
-  }
+  ) {}
 
   async fetch(): Promise<SourceBatch> {
     const listings = new Map<string, Listing>()

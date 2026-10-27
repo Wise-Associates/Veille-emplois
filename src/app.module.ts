@@ -4,7 +4,8 @@ import { APP_CONFIG, loadConfig } from './config.js'
 import { HttpClient } from './http/http-client.js'
 import { Mailer } from './mail/mailer.js'
 import { ScanService } from './scan.service.js'
-import { createSources, LISTING_SOURCES } from './sources/sources.js'
+import { SettingsLoader } from './settings/settings-loader.js'
+import { createSources, SOURCE_FACTORY, type SourceFactory } from './sources/sources.js'
 import { StateStore } from './state/state-store.js'
 
 export interface RunOptions {
@@ -24,7 +25,12 @@ export class AppModule {
         { provide: APP_CONFIG, useFactory: () => loadConfig(process.env, options.dryRun) },
         { provide: CLOCK, useValue: { now: () => new Date() } satisfies Clock },
         HttpClient,
-        { provide: LISTING_SOURCES, useFactory: createSources, inject: [HttpClient, CLOCK] },
+        {
+          provide: SOURCE_FACTORY,
+          useFactory: (http: HttpClient, clock: Clock): SourceFactory => (settings, organisations) => createSources(http, clock, settings, organisations),
+          inject: [HttpClient, CLOCK],
+        },
+        SettingsLoader,
         StateStore,
         Mailer,
         ScanService,

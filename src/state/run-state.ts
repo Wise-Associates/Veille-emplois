@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { addDays, frenchDay } from '../dates.js'
 import type { Listing, ListingKind, SourceBatch } from '../listing.js'
-import { ORGANISATIONS } from '../organisations.js'
+import { ORGANISATIONS, type Organisation } from '../organisations.js'
 
 /**
  * Une annonce absente de sa source est oubliée quand sa dernière date de présence connue a plus de 120 jours (soit
@@ -49,6 +49,11 @@ export const veilleStateSchema = z.object({
   sources: z.record(z.string(), sourceStateSchema),
   /** Procédures d'appel d'offres déjà annoncées (identifiant commun BOAMP / TED) → jour de la première annonce. */
   procedures: z.record(z.string(), daySchema),
+  /**
+   * Dernière version des réglages lue dans MyBestConsultant (ADR 0005), pour un passage où il ne répond pas. Son contenu
+   * est revalidé au moment de servir (chooseSettings).
+   */
+  settings: z.object({ version: z.number().int().positive(), savedAt: z.string(), value: z.unknown() }).optional(),
 })
 
 export type SourceState = z.infer<typeof sourceStateSchema>
@@ -147,8 +152,8 @@ export function applyRun(state: VeilleState, outcomes: SourceOutcome[], today: s
  * Ordre d'envoi des nouvelles annonces, qui compte quand le plafond par passage est atteint : appels d'offres
  * d'abord (délais de réponse), puis offres d'emploi ; par organisme dans l'ordre de la liste, les plus récentes d'abord.
  */
-export function sendingOrder<T extends Listing>(listings: T[]): T[] {
-  const rank = (listing: Listing) => ORGANISATIONS.findIndex((o) => o.id === listing.organisationId)
+export function sendingOrder<T extends Listing>(listings: T[], organisations: readonly Organisation[] = ORGANISATIONS): T[] {
+  const rank = (listing: Listing) => organisations.findIndex((o) => o.id === listing.organisationId)
   return [...listings].sort(
     (a, b) =>
       Number(a.kind === 'job') - Number(b.kind === 'job') ||

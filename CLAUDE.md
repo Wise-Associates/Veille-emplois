@@ -35,13 +35,18 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
   que sur une réponse explicite de la source ; dans le doute, lever une erreur ou laisser l'offre inconnue.
 - Une source qui ne comprend plus la page **lève une erreur** (signalée dans le récapitulatif) au lieu de renvoyer
   une liste vide ; valider les réponses JSON avec zod (`HttpClient.json`).
-- Seules les offres informatiques sont envoyées (ADR 0004, `src/it-scope.ts`) : toute règle de périmètre s'accompagne
-  d'un cas dans `src/it-scope.spec.ts` (y compris le faux positif à écarter) et d'une vérification sur les offres
-  réelles (`npm run veille:essai`). Une offre écartée est retenue comme vue : élargir ne la renverra pas.
-- Toute règle de reconnaissance d'acheteur (`src/organisations.ts`) s'accompagne d'un cas dans
-  `src/tenders/buyer-match.spec.ts`, y compris les homonymes à écarter.
-- Le workflow `veille-quotidienne.yml` n'utilise que des secrets, la variable `MAX_OFFER_EMAILS_PER_RUN`, l'entrée
-  booléenne `essai` et `DIGEST_MODE` (calculé d'après l'horaire du passage), tous passés par `env:` (jamais `${{ }}`
-  dans un script). Changer l'horaire de 5 h oblige à changer aussi l'expression de `DIGEST_MODE`.
+- **Organismes, sources et filtre informatique sont des réglages** (ADR 0005) : modifiés dans l'admin de
+  MyBestConsultant, lus au début de chaque passage (`src/settings/`), avec repli sur la dernière version connue puis
+  sur `config/defaults.json`. Le format (`src/settings/veille-settings.ts`) est le même que celui de MyBestConsultant
+  (`src/lib/veille/config.ts`, même `schemaVersion`) : toute évolution se fait dans les deux projets. Les expressions
+  des réglages sont normalisées (`normalizePhrase`, `src/phrases.ts`) avant tout usage : elles ne contiennent alors que
+  `[a-z0-9 *]` et peuvent entrer dans une requête BOAMP ou une expression régulière.
+- Seules les offres informatiques sont envoyées (ADR 0004) : toute évolution de la **logique** du périmètre
+  (`src/it-scope.ts`) ou de la reconnaissance d'acheteur (`src/tenders/buyer-match.ts`) s'accompagne d'un cas dans
+  leur `*.spec.ts` (y compris le faux positif ou l'homonyme à écarter) et d'une vérification sur les offres réelles
+  (`npm run veille:essai`). Une offre écartée est retenue comme vue : élargir ne la renverra pas.
+- Le workflow `veille-quotidienne.yml` n'utilise que des secrets (dont `VEILLE_CONFIG_URL` et `VEILLE_CONFIG_TOKEN`),
+  la variable `MAX_OFFER_EMAILS_PER_RUN`, l'entrée booléenne `essai` et `DIGEST_MODE` (calculé d'après l'horaire du
+  passage), tous passés par `env:` (jamais `${{ }}` dans un script). Changer l'horaire de 5 h oblige à changer aussi l'expression de `DIGEST_MODE`.
   Le job qui exécute le code (`passage`) garde un jeton en lecture seule ; seul `enregistrer`, qui n'exécute que git,
   peut écrire. Actions épinglées par SHA (version en commentaire).

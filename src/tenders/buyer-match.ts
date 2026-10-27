@@ -2,6 +2,7 @@
 // Règles pures, testées dans buyer-match.spec.ts.
 
 import { ORGANISATIONS, type Organisation, type OrganisationId, type TenderRule } from '../organisations.js'
+import { containsPhrase, normalize } from '../phrases.js'
 
 export interface Buyer {
   name: string
@@ -16,28 +17,8 @@ export interface NoticeForMatching {
   text: string
 }
 
-/** Minuscules, sans accents, chaque suite de caractères non alphanumériques remplacée par une espace. */
-export function normalize(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-const phrasePatterns = new Map<string, RegExp>()
-
-/** Vrai si le texte normalisé contient l'expression en mots entiers (`*` final : début de mot). */
-export function containsPhrase(normalizedText: string, phrase: string): boolean {
-  let pattern = phrasePatterns.get(phrase)
-  if (!pattern) {
-    const words = phrase.split(' ').map((word) => (word.endsWith('*') ? `${word.slice(0, -1)}[a-z0-9]*` : word))
-    pattern = new RegExp(`(?:^| )${words.join(' ')}(?: |$)`)
-    phrasePatterns.set(phrase, pattern)
-  }
-  return pattern.test(normalizedText)
-}
+// Comparaison des noms : src/phrases.ts (gardée exportée d'ici pour les appelants existants).
+export { containsPhrase, normalize }
 
 function buyerMatches(rule: TenderRule, buyer: Buyer): boolean {
   const siret = buyer.siret?.replace(/\D/g, '')

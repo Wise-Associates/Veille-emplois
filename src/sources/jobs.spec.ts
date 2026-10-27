@@ -107,6 +107,11 @@ describe('flux carrières (SFIL, Expertise France)', () => {
     const xml = rss('<item><title>Offre fictive</title><link>https://sfil-recrutement.exemple.test/connexion</link><guid>1</guid></item>')
     assert.throws(() => parseCareersFeed(xml, 'sfil', 'sfil.fr'), /Lien d'offre inattendu/)
   })
+
+  it('refuse un lien d\'offre en clair (http), même sur le site de l\'organisme', () => {
+    const xml = rss('<item><title>Offre fictive</title><link>http://sfil.fr/offres-emploi/fictive/</link><guid>2</guid></item>')
+    assert.throws(() => parseCareersFeed(xml, 'sfil', 'sfil.fr'), /https:\/\/sfil\.fr attendu/)
+  })
 })
 
 describe('sites carrières', () => {

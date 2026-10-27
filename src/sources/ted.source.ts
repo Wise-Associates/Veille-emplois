@@ -94,7 +94,8 @@ export function tedName(phrase: string): string | null {
  */
 export function tedQuery(since: string, today: string, organisations: readonly Organisation[] = ORGANISATIONS): string {
   const sirens = organisations.flatMap((o) => o.tenderRules.flatMap((rule) => (rule.requiredText ? [] : (rule.sirens ?? []))))
-  const clauses = [`buyer-identifier IN (${sirens.map((siren) => `${siren}*`).join(' ')})`]
+  // Réglages sans SIREN, ou dont toutes les expressions sont coupées : jamais de clause vide, que TED refuse (« IN () »).
+  const clauses = sirens.length ? [`buyer-identifier IN (${sirens.map((siren) => `${siren}*`).join(' ')})`] : []
   for (const organisation of organisations) {
     for (const rule of organisation.tenderRules) {
       // Sans doublons : plusieurs variantes d'un nom donnent la même expression une fois coupées.
@@ -102,9 +103,11 @@ export function tedQuery(since: string, today: string, organisations: readonly O
       if (!names.length) continue
       const byName = names.map((name) => `buyer-name~${name}`).join(' OR ')
       const texts = (rule.requiredText ?? []).map(tedName).filter((text): text is string => text !== null)
-      clauses.push(rule.requiredText ? `((${byName}) AND (${texts.map((text) => `FT~${text}`).join(' OR ')}))` : byName)
+      // Texte exigé entièrement coupé : recherche par le nom seul, plus large ; matchOrganisation revérifie le texte.
+      clauses.push(texts.length ? `((${byName}) AND (${texts.map((text) => `FT~${text}`).join(' OR ')}))` : byName)
     }
   }
+  if (!clauses.length) throw new Error('Aucun acheteur cherchable dans TED : SIREN ou noms d\'acheteur des organismes à compléter dans les réglages.')
   const compact = (day: string) => day.replaceAll('-', '')
   return (
     `buyer-country=FRA AND publication-date>=${compact(since)} AND deadline-receipt-tender-date-lot>=${compact(today)} ` +
@@ -155,14 +158,16 @@ export class TedSource implements ListingSource {
   readonly label = "TED (Journal officiel de l'UE)"
   readonly kind = 'tender'
 
+  /** `organisations` : organismes suivis d'après les réglages du passage (organisationsFrom). */
   constructor(
     private readonly http: HttpClient,
     private readonly now: () => Date,
+    private readonly organisations: readonly Organisation[],
   ) {}
 
   async fetch(): Promise<SourceBatch> {
     const today = parisDay(this.now())
-    const query = tedQuery(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today)
+    const query = tedQuery(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today, this.organisations)
     const notices: TedNotice[] = []
     for (let page = 1; ; page++) {
       if (page > MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis TED ouverts : requête à vérifier.`)
@@ -175,6 +180,6 @@ export class TedSource implements ListingSource {
     }
     // Les avis d'autres acheteurs ne sont pas retenus comme vus : les avis ouverts sont relus à chaque passage, et
     // une règle d'organisme corrigée doit pouvoir rattraper les avis encore ouverts.
-    return { listings: notices.map((notice) => tedNoticeToListing(notice)).filter((l): l is Listing => l !== null), ignoredIds: [] }
+    return { listings: notices.map((notice) => tedNoticeToListing(notice, this.organisations)).filter((l): l is Listing => l !== null), ignoredIds: [] }
   }
 }

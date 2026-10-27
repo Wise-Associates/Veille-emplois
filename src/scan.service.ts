@@ -4,10 +4,12 @@ import { APP_CONFIG, type AppConfig } from './config.js'
 import { parisDay } from './dates.js'
 import { needsAttention, renderDigest, type DeliverySummary } from './digest/digest.js'
 import { renderOfferEmail } from './digest/offer-email.js'
-import { scopeToIt } from './it-scope.js'
+import { itRulesFrom, scopeToIt, type ItRules } from './it-scope.js'
 import type { Listing, ListingDetails, ListingSource } from './listing.js'
 import { isMessageRejection, Mailer } from './mail/mailer.js'
-import { LISTING_SOURCES } from './sources/sources.js'
+import { organisationsFrom, type Organisation } from './organisations.js'
+import { SettingsLoader } from './settings/settings-loader.js'
+import { SOURCE_FACTORY, type SourceFactory } from './sources/sources.js'
 import {
   applyRun,
   forgetUnsent,
@@ -32,6 +34,13 @@ export class PartialDeliveryError extends Error {
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
+/** Ce qu'un passage tire de ses réglages, pour l'envoi et l'essai. */
+interface RunContext {
+  sources: ListingSource[]
+  organisations: readonly Organisation[]
+  settingsWarnings: { label: string; message: string }[]
+}
+
 /**
  * Durée au-delà de laquelle plus aucune offre n'est commencée. Le job GitHub est tué à 40 minutes (installation et
  * compilation comprises) ; 25 minutes laissent la marge d'enregistrer l'état et d'envoyer le récapitulatif.
@@ -48,7 +57,8 @@ export class ScanService {
   private readonly logger = new Logger(ScanService.name)
 
   constructor(
-    @Inject(LISTING_SOURCES) private readonly sources: ListingSource[],
+    @Inject(SOURCE_FACTORY) private readonly createSources: SourceFactory,
+    private readonly settingsLoader: SettingsLoader,
     private readonly store: StateStore,
     private readonly mailer: Mailer,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -58,24 +68,32 @@ export class ScanService {
   async run(): Promise<DeliverySummary> {
     const startedAt = this.clock.now().getTime()
     const state = await this.store.load()
+    // Réglages du passage (MyBestConsultant, sinon dernière version connue, sinon ceux du dépôt) : organismes suivis,
+    // sources lues, périmètre informatique.
+    const chosen = await this.settingsLoader.load(state.settings)
+    const organisations = organisationsFrom(chosen.settings)
+    const sources = this.createSources(chosen.settings, organisations)
+    const itRules = itRulesFrom(chosen.settings.itScope)
+    const settingsWarnings = chosen.warning ? [{ label: 'Réglages de la veille', message: chosen.warning }] : []
     const outcomes: SourceOutcome[] = []
     // Une source après l'autre : quelques minutes au total, et jamais plusieurs requêtes simultanées vers un même site.
     let outOfScope = 0
-    for (const source of this.sources) {
-      const read = await this.read(source, state)
+    for (const source of sources) {
+      const read = await this.read(source, state, itRules)
       outcomes.push(read.outcome)
       outOfScope += read.outOfScopeNew
     }
 
     const today = parisDay(this.clock.now())
     const { report, next } = applyRun(state, outcomes, today)
-    const batch = sendingOrder(report.newListings).slice(0, this.config.maxOfferEmailsPerRun)
+    const batch = sendingOrder(report.newListings, organisations).slice(0, this.config.maxOfferEmailsPerRun)
     this.logger.log(
       `${report.newListings.length} nouvelle(s) annonce(s), ${batch.length} à envoyer dans ce passage ; ` +
         `${report.failures.length} source(s) en échec, ${report.warnings.length} avertissement(s).`,
     )
 
-    if (this.config.dryRun) return this.preview(batch, report, today, outOfScope)
+    const run: RunContext = { sources, organisations, settingsWarnings }
+    if (this.config.dryRun) return this.preview(batch, report, today, outOfScope, run)
 
     const details = new DetailReader()
     const sent: NewListing[] = []
@@ -89,7 +107,7 @@ export class ScanService {
         this.logger.warn(`Budget de temps atteint après ${sent.length} offre(s) : le reste partira au passage suivant.`)
         break
       }
-      const complete = await this.complete(listing, details)
+      const complete = await this.complete(listing, details, sources)
       // Date limite déjà passée (souvent connue seulement par la page de l'offre) : rien à envoyer. L'offre est
       // retenue comme traitée, pour ne pas relire sa page à chaque passage.
       if (complete.deadline && complete.deadline.slice(0, 10) < today) {
@@ -97,7 +115,7 @@ export class ScanService {
         continue
       }
       try {
-        await this.mailer.sendOffer(renderOfferEmail(complete))
+        await this.mailer.sendOffer(renderOfferEmail(complete, organisations))
       } catch (error) {
         if (isMessageRejection(error)) {
           // Refus propre à ce message : les suivants partent quand même ; celui-ci sera retenté au passage suivant.
@@ -117,7 +135,8 @@ export class ScanService {
     // au passage suivant.
     const handled = new Set([...sent, ...outdated])
     const unsent = report.newListings.filter((listing) => !handled.has(listing))
-    await this.store.save(forgetUnsent(next, unsent, state))
+    // La version des réglages lue dans MyBestConsultant est gardée pour un passage où il ne répondrait pas.
+    await this.store.save(forgetUnsent({ ...next, settings: chosen.snapshot }, unsent, state))
     this.logger.log(
       `${sent.length} offre(s) envoyée(s) à la boîte AO, ${outdated.length} échue(s) écartée(s), ${unsent.length} en attente ; état enregistré.`,
     )
@@ -132,12 +151,13 @@ export class ScanService {
       deliveryError,
       failures: report.failures,
       warnings: [
+        ...settingsWarnings,
         ...report.warnings,
         ...details.warnings(),
         ...refused.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Offre refusée, retentée au prochain passage : ${offer}` })),
       ],
     }
-    const digest = renderDigest(summary, today)
+    const digest = renderDigest(summary, today, organisations)
     let digestError: string | null = null
     // Passages de la journée (DIGEST_MODE=problems) : récapitulatif seulement s'il y a un point à vérifier ; celui du
     // matin l'envoie toujours, son arrivée prouve que la veille tourne.
@@ -166,7 +186,7 @@ export class ScanService {
   }
 
   /** Essai : affiche le récapitulatif et le premier e-mail d'offre, complété comme il le serait ; rien n'est envoyé. */
-  private async preview(batch: NewListing[], report: RunReport, today: string, outOfScope: number): Promise<DeliverySummary> {
+  private async preview(batch: NewListing[], report: RunReport, today: string, outOfScope: number, run: RunContext): Promise<DeliverySummary> {
     const summary: DeliverySummary = {
       sent: batch,
       outdated: 0,
@@ -176,10 +196,10 @@ export class ScanService {
       timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,
       deliveryError: null,
       failures: report.failures,
-      warnings: report.warnings,
+      warnings: [...run.settingsWarnings, ...report.warnings],
     }
-    const digest = renderDigest(summary, today)
-    const first = batch[0] ? renderOfferEmail(await this.complete(batch[0], new DetailReader())) : null
+    const digest = renderDigest(summary, today, run.organisations)
+    const first = batch[0] ? renderOfferEmail(await this.complete(batch[0], new DetailReader(), run.sources), run.organisations) : null
     this.logger.log(
       `Essai : rien n'est envoyé ni enregistré.\n\n=== Récapitulatif (équipe) ===\n${digest.subject}\n\n${digest.text}` +
         (first ? `\n\n=== Premier des ${batch.length} e-mails d'offre (boîte AO) ===\n${first.subject}\n\n${first.text}` : ''),
@@ -188,8 +208,8 @@ export class ScanService {
   }
 
   /** Offre complétée par la page de l'offre, si sa source en a besoin. Un échec n'empêche pas l'envoi, il est signalé. */
-  private async complete(listing: NewListing, details: DetailReader): Promise<Listing> {
-    const source = this.sources.find((s) => s.id === listing.sourceId)
+  private async complete(listing: NewListing, details: DetailReader, sources: readonly ListingSource[]): Promise<Listing> {
+    const source = sources.find((s) => s.id === listing.sourceId)
     if (!source?.describe) return listing
     if (details.abandoned(source.label)) {
       details.failed(source.label)
@@ -208,15 +228,15 @@ export class ScanService {
   }
 
   /**
-   * Lecture d'une source, réduite au périmètre informatique (it-scope.ts). `outOfScopeNew` : offres jamais vues
-   * écartées par ce périmètre, comptées dans le récapitulatif.
+   * Lecture d'une source, réduite au périmètre informatique des réglages (it-scope.ts). `outOfScopeNew` : offres
+   * jamais vues écartées par ce périmètre, comptées dans le récapitulatif.
    */
-  private async read(source: ListingSource, state: VeilleState): Promise<{ outcome: SourceOutcome; outOfScopeNew: number }> {
+  private async read(source: ListingSource, state: VeilleState, itRules: ItRules): Promise<{ outcome: SourceOutcome; outOfScopeNew: number }> {
     const known = state.sources[source.id]
     const isKnown = (id: string) => known !== undefined && Object.hasOwn(known.seen, id)
     const started = Date.now()
     try {
-      const { batch, outOfScope } = scopeToIt(await source.fetch({ isKnown }))
+      const { batch, outOfScope } = scopeToIt(await source.fetch({ isKnown }), itRules)
       this.logger.log(
         `${source.label} : ${batch.listings.length} annonce(s) informatique(s), ${outOfScope.length} hors informatique, ` +
           `${batch.ignoredIds.length - outOfScope.length} hors organismes suivis (${Date.now() - started} ms).`,

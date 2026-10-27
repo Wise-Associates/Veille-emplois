@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { organisationsFrom } from '../organisations.js'
+import { DEFAULT_SETTINGS } from '../settings/defaults.js'
 import { boampBuyers, boampCpvCodes, boampDescription, boampRecordToListing, boampWhere, extractBoampBuyers, type BoampRecord } from './boamp.source.js'
 
 // Avis fictifs, construits sur la structure réelle des données BOAMP (octobre 2026).
@@ -137,6 +139,15 @@ describe('avis du BOAMP', () => {
       description: undefined,
       procedureId: 'proc-fictive',
     })
+  })
+
+  it('neutralise une expression hostile des réglages et ne produit jamais de clause vide', () => {
+    const settings = structuredClone(DEFAULT_SETTINGS)
+    settings.organisations = [{ id: 'fictif', name: 'Fictif', enabled: true, tenderRules: [{ sirens: [], names: ['x" OR nature="X'], excludedNames: [], requiredText: [], note: '' }] }]
+    const where = boampWhere('2026-06-24', '2026-10-22', organisationsFrom(settings))
+    assert.match(where, /nomacheteur like "x or nature x"/)
+    assert.equal((where.match(/"/g) ?? []).length % 2, 0, 'guillemets appariés')
+    assert.throws(() => boampWhere('2026-06-24', '2026-10-22', []), /Aucun organisme à chercher/)
   })
 
   it('ne demande que les avis de marché encore ouverts, et les achats SPM seulement s\'ils citent la DINUM', () => {

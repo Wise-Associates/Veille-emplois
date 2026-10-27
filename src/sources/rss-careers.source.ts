@@ -7,6 +7,7 @@ import { dayFromRssDate } from '../dates.js'
 import { OFFER_PAGE_REQUEST, type HttpClient } from '../http/http-client.js'
 import type { Listing, ListingDetails, ListingSource, SourceBatch } from '../listing.js'
 import type { OrganisationId } from '../organisations.js'
+import { isPublicHttpsUrl } from '../settings/veille-settings.js'
 import { htmlToText } from '../text.js'
 import { parseRssItems, type RssItem } from './rss.js'
 
@@ -21,8 +22,11 @@ export function parseCareersFeed(xml: string, organisationId: OrganisationId, li
   return parseRssItems(xml).map((item: RssItem) => {
     const id = item.guid ?? item.link
     if (!id) throw new Error(`Offre sans identifiant dans le flux (« ${item.title.slice(0, 80)} ») : le format a peut-être changé.`)
-    const host = URL.canParse(item.link) ? new URL(item.link).hostname : null
-    if (host !== linkHost) throw new Error(`Lien d'offre inattendu (${host ?? 'absent'}, ${linkHost} attendu) : le flux a peut-être changé.`)
+    const link = URL.canParse(item.link) ? new URL(item.link) : null
+    // https exigé aussi : la page de l'offre peut être lue (readOfferPage), jamais en clair.
+    if (link?.hostname !== linkHost || link.protocol !== 'https:') {
+      throw new Error(`Lien d'offre inattendu (${link ? `${link.protocol}//${link.hostname}` : 'absent'}, https://${linkHost} attendu) : le flux a peut-être changé.`)
+    }
     const department = organisationId === 'expertise-france' ? item.title.match(EXPERTISE_FRANCE_TITLE) : null
     const html = item.content ?? item.description
     return {
@@ -78,11 +82,14 @@ export class RssCareersSource implements ListingSource {
     private readonly feedUrl: string,
     options: { readOfferPage: boolean },
   ) {
-    if (options.readOfferPage) this.describe = async (listing) => parseJobPostingPage(await this.http.text(listing.url, OFFER_PAGE_REQUEST))
+    if (options.readOfferPage) {
+      this.describe = async (listing) => parseJobPostingPage(await this.http.text(listing.url, { ...OFFER_PAGE_REQUEST, allowRedirect: isPublicHttpsUrl }))
+    }
   }
 
   async fetch(): Promise<SourceBatch> {
-    const xml = await this.http.text(this.feedUrl)
+    // Adresse saisie dans les réglages : ses redirections sont vérifiées (isPublicHttpsUrl).
+    const xml = await this.http.text(this.feedUrl, { allowRedirect: isPublicHttpsUrl })
     return { listings: parseCareersFeed(xml, this.organisationId, new URL(this.feedUrl).hostname), ignoredIds: [] }
   }
 }

@@ -6,7 +6,7 @@
 
 import { frenchDeadline } from '../dates.js'
 import type { Listing } from '../listing.js'
-import { organisationName } from '../organisations.js'
+import { organisationName, ORGANISATIONS, type Organisation } from '../organisations.js'
 import { escapeHtml, safeUrl, STYLE, type RenderedEmail } from './format.js'
 
 const KIND = {
@@ -19,9 +19,9 @@ const MAX_SUBJECT = 180
 
 const FOOTER = 'Annonce relevée automatiquement par la veille marchés et emplois, à partir de sources publiques.'
 
-export function renderOfferEmail(listing: Listing): RenderedEmail {
+export function renderOfferEmail(listing: Listing, organisations: readonly Organisation[] = ORGANISATIONS): RenderedEmail {
   const kind = KIND[listing.kind]
-  const organisation = organisationName(listing.organisationId)
+  const organisation = organisationName(listing.organisationId, organisations)
   const url = safeUrl(listing.url)
   const subject = `${kind.label} — ${organisation} — ${listing.title}`.replace(/\s+/g, ' ')
 

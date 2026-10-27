@@ -9,7 +9,10 @@ import type { RenderedEmail } from './digest/format.js'
 import type { Listing, ListingSource } from './listing.js'
 import { Mailer } from './mail/mailer.js'
 import { PartialDeliveryError, ScanService } from './scan.service.js'
-import { LISTING_SOURCES } from './sources/sources.js'
+import { DEFAULT_SETTINGS } from './settings/defaults.js'
+import { SettingsLoader } from './settings/settings-loader.js'
+import type { ChosenSettings } from './settings/veille-settings.js'
+import { SOURCE_FACTORY } from './sources/sources.js'
 import { EMPTY_STATE, type VeilleState } from './state/run-state.js'
 import { StateStore } from './state/state-store.js'
 
@@ -46,6 +49,8 @@ interface Options {
   maxOfferEmailsPerRun?: number
   clock?: { now(): Date }
   digestMode?: AppConfig['digestMode']
+  /** Réglages renvoyés au passage (par défaut : ceux du dépôt, sans avertissement). */
+  settings?: Partial<ChosenSettings>
 }
 
 async function scanWith(options: Options) {
@@ -53,7 +58,10 @@ async function scanWith(options: Options) {
   const offers: RenderedEmail[] = []
   const digests: RenderedEmail[] = []
   const saved: VeilleState[] = []
-  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null }
+  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null, settings: null }
+  const settingsLoader = {
+    load: async (snapshot: VeilleState['settings']): Promise<ChosenSettings> => ({ settings: DEFAULT_SETTINGS, origin: 'defaults', warning: null, snapshot, ...options.settings }),
+  }
   const mailer = {
     sendOffer: async (email: RenderedEmail) => {
       calls.push('offre')
@@ -69,7 +77,8 @@ async function scanWith(options: Options) {
   const module = await Test.createTestingModule({
     providers: [
       ScanService,
-      { provide: LISTING_SOURCES, useValue: options.sources },
+      { provide: SOURCE_FACTORY, useValue: () => options.sources },
+      { provide: SettingsLoader, useValue: settingsLoader },
       { provide: CLOCK, useValue: options.clock ?? { now: () => new Date('2026-10-22T05:00:00Z') } },
       { provide: APP_CONFIG, useValue: config },
       { provide: StateStore, useValue: { load: async () => known, save: async (state: VeilleState) => (calls.push('état'), saved.push(state)) } },
@@ -136,6 +145,20 @@ describe('passage de la veille', () => {
     assert.equal(summary.outOfScope, 1)
     assert.deepEqual(seenIds(saved[0], 'a'), ['A1', 'A2', 'A3'], 'A3 retenue comme vue, jamais envoyée')
     assert.match(digests[0]?.text ?? '', /1 nouvelle offre écartée : hors projets informatiques/)
+  })
+
+  it('signale des réglages de repli dans le récapitulatif, même en mode « problèmes seulement »', async () => {
+    const warning = 'Réglages de MyBestConsultant illisibles (HTTP 503) : ceux de la version 4 du 26/10/2026 sont utilisés.'
+    const { scan, digests } = await scanWith({ sources: [source('a', [offer('A2')])], digestMode: 'problems', settings: { origin: 'snapshot', warning } })
+    await scan.run()
+    assert.match(digests[0]?.text ?? '', /Réglages de la veille : Réglages de MyBestConsultant illisibles \(HTTP 503\)/)
+  })
+
+  it('garde dans l\'état la version des réglages lue dans MyBestConsultant', async () => {
+    const snapshot = { version: 5, savedAt: '2026-10-27T09:00:00.000Z', value: { schemaVersion: 1 } }
+    const { scan, saved } = await scanWith({ sources: [source('a', [offer('A2')])], settings: { origin: 'remote', snapshot } })
+    await scan.run()
+    assert.deepEqual(saved[0]?.settings, snapshot)
   })
 
   it('envoie les appels d\'offres en premier', async () => {

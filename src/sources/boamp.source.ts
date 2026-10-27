@@ -61,6 +61,8 @@ export function boampWhere(since: string, today: string, organisations: readonly
       return `((${buyer}) AND (${text}))`
     }),
   )
+  // Jamais de clause vide, que le BOAMP refuse (« AND () ») ; createSources ne lit pas le BOAMP sans organisme à chercher.
+  if (!ruleClauses.length) throw new Error('Aucun organisme à chercher au BOAMP : aucune règle d\'acheteur dans les réglages.')
   // Au BOAMP, un rectificatif d'avis européen garde nature = APPEL_OFFRE : seul etat = INITIAL désigne un nouvel avis.
   return (
     `dateparution>=date'${since}' AND (datelimitereponse>=date'${today}' OR datelimitereponse is null) ` +
@@ -252,14 +254,16 @@ export class BoampSource implements ListingSource {
   readonly label = 'BOAMP'
   readonly kind = 'tender'
 
+  /** `organisations` : organismes suivis d'après les réglages du passage (organisationsFrom). */
   constructor(
     private readonly http: HttpClient,
     private readonly now: () => Date,
+    private readonly organisations: readonly Organisation[],
   ) {}
 
   async fetch(): Promise<SourceBatch> {
     const today = parisDay(this.now())
-    const where = boampWhere(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today)
+    const where = boampWhere(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today, this.organisations)
     const records: BoampRecord[] = []
     for (let page = 0; ; page++) {
       if (page >= MAX_PAGES) throw new Error(`Plus de ${MAX_PAGES * PAGE_SIZE} avis ouverts : requête à vérifier.`)
@@ -269,7 +273,7 @@ export class BoampSource implements ListingSource {
       if (records.length >= response.total_count) break
       if (response.results.length === 0) throw new Error(`Page vide après ${records.length} avis sur ${response.total_count} annoncés.`)
     }
-    const listings = records.map((record) => boampRecordToListing(record)).filter((l): l is Listing => l !== null)
+    const listings = records.map((record) => boampRecordToListing(record, this.organisations)).filter((l): l is Listing => l !== null)
     const unreadable = records.filter((record) => boampBuyers(record).unreadable).map((record) => record.idweb)
     const warnings = unreadable.length
       ? [`${unreadable.length} avis au contenu illisible (${unreadable.slice(0, 5).join(', ')}) : reconnus par le seul nom d'acheteur, le format a peut-être changé.`]

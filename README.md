@@ -51,7 +51,9 @@ Le récapitulatif signale en tête les **points à vérifier** :
 - nombre d'offres d'emploi qui s'effondre (vidé, ou divisé par plus de deux) : l'alerte revient **chaque jour**
   jusqu'à ce que la source retrouve son volume ; pendant ce temps, rien n'est oublié de ce qu'elle avait montré ;
 - aucun appel d'offres depuis trois semaines (requête BOAMP / TED devenue invalide) ;
-- avis BOAMP au contenu illisible, offres envoyées sans le détail de leur page, offres AFD dont l'examen est reporté.
+- avis BOAMP au contenu illisible, offres envoyées sans le détail de leur page, offres AFD dont l'examen est reporté ;
+- réglages de MyBestConsultant indisponibles ou invalides (repli sur la dernière version connue ou sur
+  `config/defaults.json`, voir « Réglages »), ou `VEILLE_CONFIG_URL` non défini.
 
 Un appel d'offres publié à la fois au BOAMP et à TED n'est envoyé qu'une fois.
 
@@ -62,8 +64,9 @@ l'expéditeur est d'un domaine de l'organisation (voir l'ADR 0008 de MyBestConsu
 
 ## Périmètre informatique
 
-Décision du 23/10/2026 ([docs/adr/0004-perimetre-informatique.md](docs/adr/0004-perimetre-informatique.md)), règles
-dans `src/it-scope.ts` :
+Décision du 23/10/2026 ([docs/adr/0004-perimetre-informatique.md](docs/adr/0004-perimetre-informatique.md)), logique
+dans `src/it-scope.ts`, valeurs (codes CPV, descripteurs, expressions, sigles, exclusions) dans les **réglages**
+(voir « Réglages ») :
 
 - **Appels d'offres** : services informatiques et logiciels, d'après la classification européenne de l'avis (CPV 72
   « services informatiques », CPV 48 « logiciels et systèmes d'information ») ou les descripteurs du BOAMP
@@ -81,9 +84,11 @@ Limites connues : des offres d'Expertise France liées à un programme d'« éco
 métiers informatiques ; un intitulé sans aucun mot informatique (« Ingénieur d'études » sans précision, projet nommé
 par l'adresse de son site) est écarté.
 
-- **Ajuster les règles** : modifier `src/it-scope.ts`, ajouter le cas (y compris le faux positif à écarter) dans
-  `src/it-scope.spec.ts`, puis vérifier sur les offres réelles avec `npm run build && npm run veille:essai` (le
-  journal donne, par source, le nombre d'annonces informatiques et hors informatique).
+- **Ajuster les valeurs** (expressions, codes CPV…) : onglet « Filtre informatique » de l'admin de MyBestConsultant,
+  pris en compte au passage suivant ; vérifier sur les offres réelles avec `npm run veille:essai` (avec
+  `VEILLE_CONFIG_URL` et `VEILLE_CONFIG_TOKEN`), dont le journal donne, par source, le nombre d'annonces informatiques et
+  hors informatique. **Changer la logique** (classification d'abord, sigles en majuscules…) : `src/it-scope.ts`, avec le
+  cas dans `src/it-scope.spec.ts`.
 - **Élargir le périmètre** ne renvoie pas les offres déjà écartées : elles sont retenues comme vues. Pour les
   rattraper, supprimer la clé de la source dans `sources` d'`etat.json` (voir « État de la veille ») : toutes ses
   offres en ligne repartent, y compris celles déjà envoyées, que MyBestConsultant dédoublonne sur 60 jours.
@@ -110,11 +115,33 @@ Attention, `npm run veille:local` **envoie réellement** les offres à `OFFERS_T
 `etat/etat.json` : un essai local vers la vraie boîte AO l'alimente, et l'état local n'est pas celui de la production.
 Pour un essai d'envoi, mettre une boîte de test dans `OFFERS_TO` et un petit `MAX_OFFER_EMAILS_PER_RUN`.
 
+## Réglages (MyBestConsultant)
+
+Décision du 27/10/2026 ([docs/adr/0005-reglages-dans-mybestconsultant.md](docs/adr/0005-reglages-dans-mybestconsultant.md)).
+Les **organismes suivis** (nom, SIREN, noms d'acheteur, exclusions), les **sources** (BOAMP, TED et sites intégrés :
+activés ou non ; Choisir le service public : codes d'organisme ; flux RSS de sites carrières) et le **filtre
+informatique** se modifient dans l'admin de MyBestConsultant (menu « Veille »), qui les enregistre en versions. Chaque
+passage les lit au début (`GET /api/veille/config`, jeton `VEILLE_CONFIG_TOKEN`, 15 s, une nouvelle tentative) :
+
+- MyBestConsultant répond : ses réglages, gardés dans `etat.json` (`settings`) comme dernière version connue ;
+- il ne répond pas ou renvoie des réglages illisibles : la dernière version connue, signalée dans le récapitulatif ;
+- aucune version connue, ou `VEILLE_CONFIG_URL` non défini (essai local) : ceux du dépôt, `config/defaults.json`,
+  signalés aussi.
+
+Un organisme désactivé n'est plus suivi (ni ses appels d'offres, ni ses sources). L'identifiant d'une source est sa clé
+dans `etat.json` : fixé à sa création, jamais modifié (une source recréée sous un autre identifiant renverrait toutes
+ses offres en ligne). Ajouter un site sans flux RSS ni code Choisir le service public demande du code
+(`src/sources/`, puis la liste `BUILTIN` de `src/sources/sources.ts` et `BUILTIN_SOURCE_ORGANISATIONS`, dans les deux
+projets). `config/defaults.json` (réglages exportés le 27/10/2026, avec la raison des règles particulières, `note`)
+sert à charger MyBestConsultant la première fois (`npm run veille:seed` de MyBestConsultant), aux tests et en dernier
+recours ; le garder valide (vérifié au démarrage et par `npm test`).
+
 ## Configuration
 
 Variables d'environnement, toutes décrites dans [.env.example](.env.example) : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
 `SMTP_PASSWORD`, `MAIL_FROM`, `OFFERS_TO` (boîte AO), `MAIL_TO` (équipe, adresses séparées par des virgules),
-`MAX_OFFER_EMAILS_PER_RUN` et `STATE_FILE` (facultatifs). Une variable manquante ou invalide arrête le passage avant
+`MAX_OFFER_EMAILS_PER_RUN`, `STATE_FILE`, `VEILLE_CONFIG_URL` et `VEILLE_CONFIG_TOKEN` (facultatifs ; les deux
+derniers ensemble, voir « Réglages »). Une variable manquante ou invalide arrête le passage avant
 toute lecture (le message nomme la variable, jamais sa valeur).
 
 - L'adresse de `MAIL_FROM` doit être celle de la boîte `SMTP_USER`, ou un alias autorisé de cette boîte : la plupart
@@ -134,8 +161,9 @@ toute lecture (le message nomme la variable, jamais sa valeur).
 
 1. Pousser ce dépôt sur GitHub (dépôt privé de l'organisation).
 2. Dans **Settings → Secrets and variables → Actions**, créer les secrets `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
-   `SMTP_PASSWORD`, `MAIL_FROM`, `OFFERS_TO`, `MAIL_TO` ; facultatif, la variable (onglet « Variables »)
-   `MAX_OFFER_EMAILS_PER_RUN`.
+   `SMTP_PASSWORD`, `MAIL_FROM`, `OFFERS_TO`, `MAIL_TO`, `VEILLE_CONFIG_URL` (`https://<site de production de
+   MyBestConsultant>/api/veille/config`) et `VEILLE_CONFIG_TOKEN` (même valeur que dans MyBestConsultant) ;
+   facultatif, la variable (onglet « Variables ») `MAX_OFFER_EMAILS_PER_RUN`.
 3. Laisser les permissions par défaut des workflows en lecture seule (**Settings → Actions → General**) : chaque job
    déclare lui-même ce dont il a besoin. Ne pas protéger la branche `veille-etat` contre `github-actions[bot]`.
 4. Onglet **Actions → Veille quotidienne → Run workflow** : d'abord avec « Essai » coché (récapitulatif et premier
@@ -159,13 +187,15 @@ Le workflow `Vérifications` lance types, tests, compilation et `npm audit` à c
 `etat.json` (branche `veille-etat`) retient, pour chaque source, les identifiants déjà envoyés (ou écartés) et la
 date à laquelle leur présence a été notée (rafraîchie au plus une fois par mois), le nombre d'annonces de référence,
 ainsi que les procédures d'appel d'offres déjà envoyées. Une annonce absente de sa source depuis 90 à 120 jours est
-oubliée. Chaque passage ajoute un commit : l'historique montre l'état de n'importe quel jour.
+oubliée. Il garde aussi (`settings`) la dernière version des réglages lue dans MyBestConsultant, revalidée avant d'être
+utilisée quand il ne répond pas. Chaque passage ajoute un commit : l'historique montre l'état de n'importe quel jour.
 
 - **Renvoyer toutes les offres d'une source** : supprimer sa clé dans `sources` (commit sur `veille-etat`).
 - **Accepter une baisse durable** du nombre d'offres (alerte quotidienne alors que la source va bien) : remplacer son
   `lastCount` par le nombre actuel.
-- **Ne jamais supprimer la branche** ni renommer l'`id` d'une source dans le code : toutes ses offres en ligne
-  repartiraient vers la boîte AO.
+- **Ne jamais supprimer la branche**, ni changer l'`id` d'une source (code ou réglages), ni la supprimer dans les
+  réglages pour la recréer sous un autre identifiant (la désactiver plutôt) : toutes ses offres en ligne repartiraient
+  vers la boîte AO.
 - Un fichier abîmé arrête la veille avec un message explicite plutôt que de tout oublier en silence : le corriger, ou
   revenir au commit précédent de la branche.
 
@@ -173,13 +203,17 @@ oubliée. Chaque passage ajoute un commit : l'historique montre l'état de n'imp
 
 | Besoin | Où |
 |---|---|
-| Ajouter un organisme ou un nom d'acheteur | `src/organisations.ts` (règles commentées), test dans `src/tenders/buyer-match.spec.ts` |
-| Ajouter / modifier une source d'offres d'emploi | `src/sources/` (une classe par source), liste dans `src/sources/sources.ts` |
+| Ajouter un organisme, un SIREN ou un nom d'acheteur | admin de MyBestConsultant, « Veille » → Organismes (réglages, voir ci-dessus) |
+| Ajouter un code Choisir le service public ou un flux RSS | admin de MyBestConsultant, « Veille » → Sources |
 | Code d'un organisme sur Choisir le service public | le nombre dans l'URL `…/nos-offres/filtres/organisme/<code>/` du site |
+| Nouveau site sans flux (lecteur propre) | `src/sources/` (une classe par source), `BUILTIN` dans `src/sources/sources.ts` |
+| Logique de reconnaissance des acheteurs | `src/tenders/buyer-match.ts`, cas dans `src/tenders/buyer-match.spec.ts` |
+| Lecture des réglages, repli | `src/settings/` (format : `veille-settings.ts`, même format que MyBestConsultant) |
 | E-mail d'une offre (boîte AO) | `src/digest/offer-email.ts` |
 | Récapitulatif de l'équipe | `src/digest/digest.ts` |
 | Calcul des nouveautés, ordre d'envoi, alertes de volume | `src/state/run-state.ts` |
-| Périmètre informatique (codes CPV, expressions, sigles) | `src/it-scope.ts`, cas dans `src/it-scope.spec.ts` |
+| Valeurs du périmètre informatique (codes CPV, expressions, sigles) | admin de MyBestConsultant, « Veille » → Filtre informatique |
+| Logique du périmètre informatique | `src/it-scope.ts`, cas dans `src/it-scope.spec.ts` |
 
 Quand une source apparaît dans « Points à vérifier » plusieurs jours de suite, ouvrir sa page dans un navigateur,
 comparer avec ce qu'attend son fichier dans `src/sources/` (sélecteurs, champs JSON), adapter, puis vérifier avec
@@ -192,8 +226,10 @@ src/
   main.ts                 point d'entrée (contexte Nest autonome, codes de sortie)
   app.module.ts           assemblage des services
   scan.service.ts         un passage : lire, comparer, envoyer chaque offre, enregistrer, récapituler
-  organisations.ts        organismes suivis et règles de reconnaissance des acheteurs
+  settings/               réglages du passage (MyBestConsultant, dernière version connue, config/defaults.json)
+  organisations.ts        organismes suivis, tirés des réglages
   it-scope.ts             périmètre informatique (offres envoyées ou écartées)
+  phrases.ts              comparaison d'expressions sans accents ni majuscules
   tenders/buyer-match.ts  reconnaissance de l'acheteur d'un avis
   sources/                une source par fichier (BOAMP, TED, Choisir le service public, sites carrières)
   state/                  calcul des nouveautés (règles pures) et fichier d'état
@@ -201,6 +237,7 @@ src/
   mail/                   envoi SMTP (nodemailer, une connexion, une offre par seconde)
   http/                   accès HTTP commun (délai, taille maximale, nouvelle tentative, User-Agent)
   text.ts                 conversion des descriptions HTML en texte
+config/defaults.json      réglages du dépôt (premier chargement de MyBestConsultant, tests, dernier recours)
 ```
 
 Choix techniques (NestJS autonome, `tsc`, `node:test`, état sur branche) :
