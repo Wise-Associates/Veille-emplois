@@ -1,13 +1,17 @@
 // Périmètre de la veille : seuls les projets informatiques sont envoyés à la boîte AO (décision du 23/10/2026).
 // Règles pures, testées dans it-scope.spec.ts, à vérifier sur les offres réelles avant de les élargir ou les resserrer.
 //
-// Appels d'offres : services informatiques et logiciels, d'après la classification européenne (CPV 72 : services
-// informatiques — conseil, développement, intégration, support, hébergement ; CPV 48 : logiciels et systèmes
-// d'information) ou les descripteurs du BOAMP. Hors périmètre : matériel, maintenance de serveurs et réseaux,
-// télécommunications, travaux. Un avis sans aucune classification est jugé sur son intitulé. Depuis le 27/10/2026
-// (ADR 0006), les mots-clés des appels d'offres (SaaS, digitalisation, données, IA…), cherchés dans l'intitulé et la
-// description, l'emportent sur la classification : un projet de digitalisation est souvent classé « conseil » (CPV 79).
-// Un avis classé informatique dont l'intitulé ne parle que d'infrastructure, sans aucun mot-clé, est écarté.
+// Appels d'offres (ADR 0007, décision du 27/10/2026 : aucun avis hors sujet) : deux indices doivent concorder.
+// - Le code CPV principal de l'avis est informatique (72 : services informatiques ; 48 : logiciels et systèmes
+//   d'information) ; à défaut de code (petits avis du BOAMP), un descripteur informatique du BOAMP. Les codes
+//   secondaires ne comptent pas : un achat d'imprimantes ou de réactifs en porte souvent un « logiciel ».
+// - L'intitulé contient un mot-clé des appels d'offres (SaaS, TMA, données, IA…) ; pour un organisme suivi, le
+//   vocabulaire du filtre informatique compte aussi. La description ne compte pas : ses mots (« maintenance
+//   corrective », « logiciel ») décrivent aussi bien une cuisine ou des portiers que des applications.
+// Un avis classé hors informatique est écarté, même avec un mot-clé (stand, formation, agence de voyages relevés le
+// 27/10/2026) ; un avis classé informatique sans indice dans son intitulé aussi (saisie de données, accès à Internet,
+// licences). Sans aucune classification, seul l'intitulé d'un avis d'organisme suivi décide. Un avis classé informatique
+// dont l'intitulé ne parle que d'infrastructure, sans mot-clé des appels d'offres, est écarté.
 //
 // Offres d'emploi : métiers techniques, données / IA / cybersécurité, projets informatiques et SI métier (AMOA,
 // business analyst, ERP, SI financiers), métiers du numérique (UX/UI, web), d'après l'intitulé et la catégorie.
@@ -18,6 +22,7 @@
 // (d'une règle), « hébergement » (logement), « urbaniste » (urbanisme) n'y sont qu'en expression.
 
 import type { Listing, SourceBatch } from './listing.js'
+import { OTHER_BUYERS_ID } from './organisations.js'
 import { containsPhrase, normalize, normalizePhrase } from './phrases.js'
 import { DEFAULT_SETTINGS } from './settings/defaults.js'
 import type { VeilleSettings } from './settings/veille-settings.js'
@@ -79,35 +84,40 @@ export function mentionsIt(text: string, rules: ItRules = DEFAULT_IT_RULES): boo
   return rules.phrases.some((phrase) => containsPhrase(normalized, phrase))
 }
 
-/**
- * Un mot-clé des appels d'offres figure-t-il dans l'intitulé ou la description d'un avis ? Les exclusions (travaux…)
- * ne sont cherchées que dans l'intitulé : une description parle volontiers des « travaux de développement ».
- */
-export function mentionsTenderKeyword(listing: Pick<Listing, 'title' | 'description'>, rules: ItRules = DEFAULT_IT_RULES): boolean {
-  if (rules.exclusions.some((phrase) => containsPhrase(normalize(listing.title), phrase))) return false
-  const text = `${listing.title}\n${listing.description ?? ''}`
+/** Un mot-clé des appels d'offres (expression, ou sigle en majuscules) figure-t-il dans ce texte (un intitulé) ? */
+export function mentionsTenderKeyword(text: string, rules: ItRules = DEFAULT_IT_RULES): boolean {
   if (rules.tenderAcronyms?.test(text)) return true
   const normalized = normalize(text)
   return rules.tenderPhrases.some((phrase) => containsPhrase(normalized, phrase))
 }
 
-/** Appel d'offres de services informatiques ou de logiciels. */
-export function isItTender(listing: Pick<Listing, 'title' | 'description' | 'cpv' | 'descriptors'>, rules: ItRules = DEFAULT_IT_RULES): boolean {
-  const cpv = (listing.cpv ?? []).map((code) => code.replace(/\D/g, '')).filter(Boolean)
+/** Classification d'un avis : son code CPV principal, ou à défaut ses descripteurs du BOAMP. */
+function classification(listing: Pick<Listing, 'mainCpv' | 'descriptors'>, rules: ItRules): 'it' | 'other' | 'none' {
+  const mainCpv = listing.mainCpv?.replace(/\D/g, '')
+  if (mainCpv) return rules.cpvPrefixes.some((prefix) => mainCpv.startsWith(prefix)) ? 'it' : 'other'
   const descriptors = (listing.descriptors ?? []).map(normalize)
-  const keyword = mentionsTenderKeyword(listing, rules)
-  const classifiedIt =
-    cpv.some((code) => rules.cpvPrefixes.some((prefix) => code.startsWith(prefix))) ||
-    descriptors.some((descriptor) => rules.descriptors.has(descriptor))
-  if (classifiedIt) {
-    // CPV 72 comprend aussi les réseaux et l'hébergement : hors périmètre quand l'intitulé n'en dit pas plus.
-    const infrastructure = rules.infrastructure.some((phrase) => containsPhrase(normalize(listing.title), phrase))
-    return keyword || !infrastructure
+  if (descriptors.length === 0) return 'none'
+  return descriptors.some((descriptor) => rules.descriptors.has(descriptor)) ? 'it' : 'other'
+}
+
+/** Appel d'offres de services informatiques ou de logiciels : classification et intitulé concordent (voir en tête). */
+export function isItTender(listing: Pick<Listing, 'organisationId' | 'title' | 'mainCpv' | 'descriptors'>, rules: ItRules = DEFAULT_IT_RULES): boolean {
+  const title = normalize(listing.title)
+  if (rules.exclusions.some((phrase) => containsPhrase(title, phrase))) return false
+  const keyword = mentionsTenderKeyword(listing.title, rules)
+  const followed = listing.organisationId !== OTHER_BUYERS_ID
+  const titleSaysIt = keyword || (followed && mentionsIt(listing.title, rules))
+  switch (classification(listing, rules)) {
+    case 'other':
+      return false
+    case 'none':
+      return followed && titleSaysIt
+    case 'it': {
+      // CPV 72 comprend aussi les réseaux et l'hébergement : hors périmètre quand l'intitulé n'en dit pas plus.
+      const infrastructure = rules.infrastructure.some((phrase) => containsPhrase(title, phrase))
+      return keyword || (titleSaysIt && !infrastructure)
+    }
   }
-  if (keyword) return true
-  // Classé hors informatique par l'acheteur ou le BOAMP, sans mot-clé : la classification l'emporte sur l'intitulé.
-  if (cpv.length || descriptors.length) return false
-  return mentionsIt(listing.title, rules)
 }
 
 /** Offre d'emploi d'un métier informatique ou numérique, d'après son intitulé et sa catégorie (domaine, département). */

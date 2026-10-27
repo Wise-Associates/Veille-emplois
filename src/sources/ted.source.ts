@@ -28,7 +28,7 @@ const FIELDS = [
   'deadline-receipt-tender-date-lot',
   'procedure-type',
   'procedure-identifier',
-  'classification-cpv',
+  'main-classification-proc',
 ]
 
 /** Champ multilingue : { "fra": "…" } ou { "fra": ["…"] }. */
@@ -46,7 +46,8 @@ const noticeSchema = z.object({
   'deadline-receipt-tender-date-lot': oneOrMany.optional(),
   'procedure-type': oneOrMany.optional(),
   'procedure-identifier': oneOrMany.optional(),
-  'classification-cpv': oneOrMany.optional(),
+  /** Code CPV principal de la procédure (les codes secondaires et ceux des lots ne comptent pas, it-scope.ts). */
+  'main-classification-proc': oneOrMany.optional(),
 })
 const responseSchema = z.object({ notices: z.array(noticeSchema), totalNoticeCount: z.number().int() })
 
@@ -150,7 +151,9 @@ export function tedKeywordClause(phrase: string): string | null {
 /**
  * Requêtes de la recherche chez tous les acheteurs (all-buyers.ts) : avis ouverts classés informatique (CPV), puis une
  * requête par famille de mots-clés, cherchés dans l'intitulé de la procédure (tedKeywordClause ; sigles tels quels, la
- * recherche TED ignore la casse) ; `label` nomme la requête dans une erreur. Jamais de clause vide.
+ * recherche TED ignore la casse) ; `label` nomme la requête dans une erreur. Jamais de clause vide. La requête par CPV
+ * trouve les avis dont l'intitulé contient un sigle de deux lettres (« IA », « BI »), que TED ne sait pas chercher ;
+ * comme les autres, ils ne sont gardés qu'avec un mot-clé dans l'intitulé (isItTender).
  */
 export function tedAllBuyersQueries(since: string, today: string, search: AllBuyersSearch): { label: string; query: string }[] {
   const clauses = [
@@ -199,6 +202,7 @@ export function tedNoticeToListing(
   const deadline = values(notice['deadline-receipt-tender-date-lot']).map((d) => d.slice(0, 10)).sort()[0]
   const procedure = values(notice['procedure-type'])[0]
   const buyerName = french(notice['buyer-name'])
+  const mainCpv = values(notice['main-classification-proc'])[0]
   return {
     kind: 'tender',
     id: number,
@@ -215,7 +219,7 @@ export function tedNoticeToListing(
     ],
     description: description ? limitText(description) : undefined,
     procedureId: values(notice['procedure-identifier'])[0],
-    ...(values(notice['classification-cpv']).length ? { cpv: [...new Set(values(notice['classification-cpv']))] } : {}),
+    ...(mainCpv ? { mainCpv } : {}),
   }
 }
 

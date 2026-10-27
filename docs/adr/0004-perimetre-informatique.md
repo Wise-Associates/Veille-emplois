@@ -1,6 +1,7 @@
 # 0004 — Périmètre informatique : seules les offres informatiques sont envoyées
 
-Date : 23 octobre 2026 · Statut : acceptée (complète l'ADR 0003)
+Date : 23 octobre 2026 · Statut : acceptée (complète l'ADR 0003) ; règle des appels d'offres remplacée le 27/10/2026
+par l'[ADR 0007](0007-appels-d-offres-deux-indices-concordants.md)
 
 ## Contexte
 

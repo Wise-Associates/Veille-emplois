@@ -9,7 +9,7 @@ import {
   BoampAllBuyersSource,
   boampAllBuyersWheres,
   boampBuyers,
-  boampCpvCodes,
+  boampMainCpv,
   boampDescription,
   boampRecordToListing,
   boampWhere,
@@ -122,14 +122,18 @@ describe('avis du BOAMP', () => {
     assert.equal(location.length, 200)
   })
 
-  it('lit les codes CPV des avis européens et nationaux', () => {
+  it('lit le code CPV principal des avis européens et nationaux, sans les codes secondaires ni ceux des lots', () => {
     const eformsCpv = { EFORMS: { ContractNotice: {
-      'cac:ProcurementProject': { 'cac:MainCommodityClassification': { 'cbc:ItemClassificationCode': { '@listName': 'cpv', '#text': '72000000' } } },
-      'cac:ProcurementProjectLot': [{ 'cac:ProcurementProject': { 'cac:MainCommodityClassification': { 'cbc:ItemClassificationCode': { '#text': '48000000' } } } }],
+      'cac:ProcurementProject': {
+        'cac:MainCommodityClassification': { 'cbc:ItemClassificationCode': { '@listName': 'cpv', '#text': '30232150' } },
+        'cac:AdditionalCommodityClassification': [{ 'cbc:ItemClassificationCode': { '#text': '48820000' } }],
+      },
+      'cac:ProcurementProjectLot': [{ 'cac:ProcurementProject': { 'cac:MainCommodityClassification': { 'cbc:ItemClassificationCode': { '#text': '72000000' } } } }],
     } } }
-    assert.deepEqual(boampCpvCodes(eformsCpv).sort(), ['48000000', '72000000'])
-    assert.deepEqual(boampCpvCodes({ FNSimple: { initial: { natureMarche: { codeCPV: { objetPrincipal: { classPrincipale: '72212000' } } } } } }), ['72212000'])
-    assert.deepEqual(boampCpvCodes({ MAPA: { organisme: { classificationOrganisme: '5' } } }), [], 'les petits avis n\'en ont pas')
+    assert.equal(boampMainCpv(eformsCpv), '30232150')
+    const fns = { FNSimple: { initial: { natureMarche: { codeCPV: { objetPrincipal: { classPrincipale: '72212000' }, objetComplementaire: { classPrincipale: '30200000' } } } } } }
+    assert.equal(boampMainCpv(fns), '72212000')
+    assert.equal(boampMainCpv({ MAPA: { organisme: { classificationOrganisme: '5' } } }), undefined, 'les petits avis n\'en ont pas')
   })
 
   it('signale un avis au contenu illisible au lieu de perdre en silence la reconnaissance par SIRET', () => {
@@ -190,8 +194,13 @@ describe('BOAMP : recherche chez tous les acheteurs', () => {
   }
   const search = allBuyersSearchFrom(settings)
   assert.ok(search)
-  const donnees = (name: string, description = 'Objet détaillé fictif.') =>
-    JSON.stringify({ FNSimple: { organisme: { nomOfficiel: name }, initial: { description: { objet: description } } } })
+  const donnees = (name: string, mainCpv = '72000000') =>
+    JSON.stringify({
+      FNSimple: {
+        organisme: { nomOfficiel: name },
+        initial: { description: { objet: 'Objet détaillé fictif.' }, natureMarche: { codeCPV: { objetPrincipal: { classPrincipale: mainCpv } } } },
+      },
+    })
   /** Faux BOAMP : avis légers selon la requête, avis complets pour `idweb IN`. */
   const fakeHttp = (answer: (where: string, light: boolean) => BoampRecord[], full: Map<string, BoampRecord>, fullRequests: string[] = []) =>
     ({
@@ -209,43 +218,46 @@ describe('BOAMP : recherche chez tous les acheteurs', () => {
   const fetchWith = (http: HttpClient, known: string[] = []) =>
     new BoampAllBuyersSource(http, () => new Date('2026-10-22T05:00:00Z'), organisationsFrom(settings), search).fetch({ isKnown: (id) => known.includes(id) })
 
-  it('cherche les avis classés informatique, puis chaque famille dans l\'objet, sans mot d\'une lettre ni clause vide', () => {
+  it('cherche chaque famille dans l\'objet, sans requête par classification, sans mot d\'une lettre ni clause vide', () => {
     const wheres = boampAllBuyersWheres('2026-06-24', '2026-10-22', search)
-    assert.deepEqual(wheres.map((w) => w.label), ['Avis classés informatique', 'Famille « Données »'])
+    assert.deepEqual(wheres.map((w) => w.label), ['Famille « Données »'])
     assert.ok(wheres.every(({ where }) => where.startsWith(`dateparution>=date'2026-06-24' AND`) && where.includes('etat="INITIAL"')))
-    assert.match(wheres[0]?.where ?? '', /\(descripteur_libelle="Informatique \(prestations de services\)" OR descripteur_libelle="Logiciel"\)$/)
-    assert.match(wheres[1]?.where ?? '', /\(search\(objet,"gouvernance des donnees"\) OR search\(objet,"developpement application"\) OR search\(objet,"mdm"\)\)$/)
-    assert.deepEqual(boampAllBuyersWheres('2026-06-24', '2026-10-22', { ...search, families: [], boampDescriptors: [] }), [])
+    assert.match(wheres[0]?.where ?? '', /\(search\(objet,"gouvernance des donnees"\) OR search\(objet,"developpement application"\) OR search\(objet,"mdm"\)\)$/)
+    assert.deepEqual(boampAllBuyersWheres('2026-06-24', '2026-10-22', { ...search, families: [] }), [])
   })
 
   it('garde les avis exacts d\'autres acheteurs sous leur nom, laisse ceux des organismes suivis à la source BOAMP, et ne relit en entier que les avis inconnus', async () => {
     const light = {
       unknown: record({ idweb: '26-000010', objet: 'Mission de gouvernance des données fictive', nomacheteur: 'Commune fictive' }),
       disordered: record({ idweb: '26-000011', objet: 'Données fictives : gouvernance des voiries', nomacheteur: 'Commune fictive' }),
-      known: record({ idweb: '26-000012', objet: 'Prestations fictives', nomacheteur: 'Département fictif', descripteur_libelle: ['Logiciel'] }),
-      followed: record({ idweb: '26-000013', nomacheteur: 'Direction générale des finances publiques', descripteur_libelle: ['Logiciel'] }),
+      known: record({ idweb: '26-000012', objet: 'Gouvernance des données fictive du département', nomacheteur: 'Département fictif' }),
+      followed: record({ idweb: '26-000013', objet: 'Gouvernance des données fictive', nomacheteur: 'Direction générale des finances publiques' }),
     }
     const full = new Map([['26-000010', { ...light.unknown, donnees: donnees('Commune fictive') }]])
     const fullRequests: string[] = []
-    const http = fakeHttp((where) => (where.includes('descripteur_libelle=') ? [light.known, light.followed] : [light.unknown, light.disordered]), full, fullRequests)
-    const batch = await fetchWith(http, ['26-000012'])
+    const batch = await fetchWith(fakeHttp(() => Object.values(light), full, fullRequests), ['26-000012'])
 
-    assert.deepEqual(batch.listings.map((l) => l.id), ['26-000012', '26-000010'], 'avis au désordre et avis de la DGFiP écartés')
+    assert.deepEqual(batch.listings.map((l) => l.id), ['26-000010', '26-000012'], 'avis au désordre et avis de la DGFiP écartés')
     assert.deepEqual(fullRequests, ['idweb IN ("26-000010")'], 'avis déjà connu non relu')
     const other = batch.listings.find((l) => l.id === '26-000010')
     assert.equal(other?.organisationId, OTHER_BUYERS_ID)
     assert.equal(other?.buyer, 'Commune fictive')
     assert.equal(other?.description, 'Objet détaillé fictif.')
+    assert.equal(other?.mainCpv, '72000000')
     assert.deepEqual(batch.ignoredIds, [])
   })
 
-  it('relit en entier un avis classé informatique à l\'intitulé d\'infrastructure : sa description peut contenir un mot-clé', async () => {
-    const light = record({ idweb: '26-000020', objet: 'Fourniture de serveurs fictifs', nomacheteur: 'Commune fictive', descripteur_libelle: ['Logiciel'] })
-    const full = new Map([['26-000020', { ...light, donnees: donnees('Commune fictive', 'Lot 2 : gouvernance des données.') }]])
-    const batch = await fetchWith(fakeHttp(() => [light], full))
-    assert.deepEqual(batch.listings.map((l) => l.id), ['26-000020'])
+  it('juge l\'avis complet sur son code CPV principal', async () => {
+    const project = record({ idweb: '26-000020', objet: 'Gouvernance des données fictive', nomacheteur: 'Commune fictive' })
+    const consulting = record({ idweb: '26-000021', objet: 'Formation fictive à la gouvernance des données', nomacheteur: 'Commune fictive' })
+    const full = new Map([
+      ['26-000020', { ...project, donnees: donnees('Commune fictive', '72224000') }],
+      ['26-000021', { ...consulting, donnees: donnees('Commune fictive', '80500000') }],
+    ])
+    const batch = await fetchWith(fakeHttp(() => [project, consulting], full))
     const scoped = scopeToIt(batch, search.rules)
-    assert.deepEqual(scoped.outOfScope, [], 'mot-clé dans la description : gardé')
+    assert.deepEqual(scoped.batch.listings.map((l) => l.id), ['26-000020'])
+    assert.deepEqual(scoped.outOfScope, ['26-000021'], 'classé formation : écarté et retenu comme vu')
   })
 
   it('nomme la famille de mots-clés qui ramène trop d\'avis', async () => {
@@ -253,6 +265,6 @@ describe('BOAMP : recherche chez tous les acheteurs', () => {
     const http = {
       json: async (_url: string, schema: { parse(value: unknown): unknown }) => schema.parse({ total_count: 5000, results: tooMany }),
     } as unknown as HttpClient
-    await assert.rejects(fetchWith(http), /^Error: Avis classés informatique : Plus de 2000 avis ouverts/)
+    await assert.rejects(fetchWith(http), /^Error: Famille « Données » : Plus de 2000 avis ouverts/)
   })
 })

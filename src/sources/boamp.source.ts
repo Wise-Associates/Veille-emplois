@@ -6,7 +6,7 @@
 import { z } from 'zod'
 import { addDays, parisDay } from '../dates.js'
 import type { HttpClient } from '../http/http-client.js'
-import { isItTender } from '../it-scope.js'
+import { mentionsTenderKeyword } from '../it-scope.js'
 import type { Listing, ListingSource, SourceBatch, SourceContext } from '../listing.js'
 import { ORGANISATIONS, OTHER_BUYERS_ID, type Organisation } from '../organisations.js'
 import type { AllBuyersSearch } from '../tenders/all-buyers.js'
@@ -26,8 +26,8 @@ const PAGE_SIZE = 100
 /** Garde-fou : une vingtaine d'avis ouverts pour ces organismes en octobre 2026. */
 const MAX_PAGES = 10
 /**
- * Garde-fou d'une requête chez tous les acheteurs : en octobre 2026, 199 avis ouverts classés informatique et jusqu'à
- * 251 pour une famille (« BI » : la recherche ignore la casse, l'intitulé est revérifié ensuite).
+ * Garde-fou d'une requête chez tous les acheteurs : en octobre 2026, jusqu'à 251 avis ouverts pour une famille (« BI » :
+ * la recherche ignore la casse, l'intitulé est revérifié ensuite).
  */
 const MAX_ALL_BUYERS_PAGES = 20
 /** Avis complets lus par requête (identifiants dans l'adresse). */
@@ -105,22 +105,19 @@ function searchWords(phrase: string): string {
 }
 
 /**
- * Requêtes de la recherche chez tous les acheteurs (all-buyers.ts) : avis ouverts classés informatique par le BOAMP,
- * puis une requête par famille de mots-clés, cherchés dans l'objet ; `label` nomme la requête dans une erreur.
- * Expressions et descripteurs validés par les réglages (ni guillemet ni barre oblique inverse) : sûrs entre guillemets.
- * Jamais de clause vide.
+ * Requêtes de la recherche chez tous les acheteurs (all-buyers.ts) : une par famille de mots-clés, cherchés dans
+ * l'objet (sigles compris : la recherche du BOAMP accepte ceux de deux lettres) ; `label` nomme la requête dans une
+ * erreur. Pas de requête par classification : un avis n'est gardé qu'avec un mot-clé dans son intitulé (isItTender).
+ * Expressions validées par les réglages (`[a-z0-9 *]`) : sûres entre guillemets. Jamais de clause vide.
  */
 export function boampAllBuyersWheres(since: string, today: string, search: AllBuyersSearch): { label: string; where: string }[] {
-  const clauses = [
-    { label: 'Avis classés informatique', clause: search.boampDescriptors.map((descriptor) => `descripteur_libelle="${descriptor}"`).join(' OR ') },
-    ...search.families.map((family) => ({
-      label: `Famille « ${family.label} »`,
-      clause: [...new Set([...family.phrases.map(searchWords), ...family.acronyms.map((acronym) => acronym.toLowerCase())])]
-        .filter(Boolean)
-        .map((words) => `search(objet,"${words}")`)
-        .join(' OR '),
-    })),
-  ]
+  const clauses = search.families.map((family) => ({
+    label: `Famille « ${family.label} »`,
+    clause: [...new Set([...family.phrases.map(searchWords), ...family.acronyms.map((acronym) => acronym.toLowerCase())])]
+      .filter(Boolean)
+      .map((words) => `search(objet,"${words}")`)
+      .join(' OR '),
+  }))
   return clauses.filter(({ clause }) => clause).map(({ label, clause }) => ({ label, where: `${openNotices(since, today)} AND (${clause})` }))
 }
 
@@ -205,25 +202,22 @@ function parseDonnees(record: BoampRecord): Json | null {
 }
 
 /**
- * Codes CPV d'un avis (procédure et lots) : `cbc:ItemClassificationCode` des avis européens (eForms), `codeCPV` des
- * avis nationaux. Les petits avis (MAPA) n'en ont pas.
+ * Code CPV principal d'un avis : objet principal de la procédure dans un avis européen (eForms) ou national (FNSimple).
+ * Les codes secondaires et ceux des lots ne sont pas lus : un achat d'imprimantes ou de matériel en porte souvent un
+ * « logiciel » (it-scope.ts). Les petits avis (MAPA) n'en ont pas.
  */
-export function boampCpvCodes(donnees: Json): string[] {
-  const codes = new Set<string>()
-  const collect = (value: Json): void => {
-    const code = text(value)
-    if (code && /^\d{8}/.test(code.trim())) codes.add(code.trim().slice(0, 8))
-    else if (value && typeof value === 'object') for (const nested of Object.values(value as Record<string, Json>)) collect(nested)
+export function boampMainCpv(donnees: Json): string | undefined {
+  const eforms = child(donnees, 'EFORMS')
+  const notice = eforms && typeof eforms === 'object' ? Object.values(eforms as Record<string, Json>)[0] : undefined
+  const candidates = [
+    child(list(child(child(notice, 'cac:ProcurementProject'), 'cac:MainCommodityClassification'))[0], 'cbc:ItemClassificationCode'),
+    child(child(child(child(child(donnees, 'FNSimple'), 'initial'), 'natureMarche'), 'codeCPV'), 'objetPrincipal'),
+  ]
+  for (const candidate of candidates) {
+    const code = text(child(candidate, 'classPrincipale') ?? candidate)?.trim()
+    if (code && /^\d{8}/.test(code)) return code.slice(0, 8)
   }
-  const walk = (value: Json): void => {
-    if (!value || typeof value !== 'object') return
-    for (const [key, nested] of Object.entries(value as Record<string, Json>)) {
-      if (key === 'cbc:ItemClassificationCode' || key === 'codeCPV') collect(nested)
-      else walk(nested)
-    }
-  }
-  walk(donnees)
-  return [...codes]
+  return undefined
 }
 
 /**
@@ -300,7 +294,7 @@ export function boampRecordToListing(
   const marketTypes = (record.type_marche ?? []).map((type) => MARKET_TYPES[type] ?? type).join(', ')
   const donnees = parseDonnees(record) ?? {}
   const { description, location } = boampDescription(donnees)
-  const cpv = boampCpvCodes(donnees)
+  const mainCpv = boampMainCpv(donnees)
   const descriptors = (record.descripteur_libelle ?? []).filter(Boolean)
   const departments = (record.code_departement ?? []).filter(Boolean)
   return {
@@ -322,7 +316,7 @@ export function boampRecordToListing(
     location: location ?? (departments.length ? `Département(s) ${departments.join(', ')}` : undefined),
     description,
     procedureId: record.contractfolderid ?? undefined,
-    ...(cpv.length ? { cpv } : {}),
+    ...(mainCpv ? { mainCpv } : {}),
     ...(descriptors.length ? { descriptors } : {}),
   }
 }
@@ -389,10 +383,10 @@ export class BoampAllBuyersSource implements ListingSource {
   ) {}
 
   /**
-   * Avis lus d'abord sans leur contenu ; ceux qui ne peuvent pas correspondre (la recherche du BOAMP ignore l'ordre des
-   * mots) sont laissés de côté, sans être retenus comme vus. Seuls les avis encore inconnus de la veille sont relus en
-   * entier (description, CPV, acheteurs) : les autres ont déjà été envoyés ou écartés. Le périmètre complet, infrastructure
-   * comprise, est jugé ensuite sur l'avis entier (scopeToIt) : une description peut contenir un mot-clé.
+   * Avis lus d'abord sans leur contenu ; ceux dont l'intitulé ne contient pas exactement un mot-clé (la recherche du
+   * BOAMP ignore l'ordre des mots) sont laissés de côté, sans être retenus comme vus. Seuls les avis encore inconnus de
+   * la veille sont relus en entier (description, code CPV principal, acheteurs) : les autres ont déjà été envoyés ou
+   * écartés. Le périmètre est jugé ensuite sur l'avis entier (scopeToIt), avec son code CPV principal.
    */
   async fetch(context: SourceContext): Promise<SourceBatch> {
     const today = parisDay(this.now())
@@ -404,11 +398,8 @@ export class BoampAllBuyersSource implements ListingSource {
         throw new Error(`${label} : ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    const preselection = { ...this.search.rules, infrastructure: [] }
-    const candidates = [...light.values()].filter((record) => {
-      const listing = this.otherBuyerListing(record)
-      return listing !== null && isItTender(listing, preselection)
-    })
+    // Un avis n'est gardé qu'avec un mot-clé dans son intitulé : seuls ceux-là sont relus en entier (code CPV principal).
+    const candidates = [...light.values()].filter((record) => this.otherBuyerListing(record) !== null && mentionsTenderKeyword(record.objet ?? '', this.search.rules))
     const full = await this.fullRecords(candidates.map((record) => record.idweb).filter((id) => !context.isKnown(id)))
     const listings = candidates
       .map((record) => this.otherBuyerListing(full.get(record.idweb) ?? record))

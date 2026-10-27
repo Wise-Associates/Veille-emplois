@@ -3,75 +3,86 @@ import assert from 'node:assert/strict'
 import { DEFAULT_IT_RULES, itRulesFrom, isItJob, isItTender, mentionsIt, scopeToIt } from './it-scope.js'
 import { DEFAULT_SETTINGS } from './settings/defaults.js'
 import type { Listing } from './listing.js'
+import { OTHER_BUYERS_ID } from './organisations.js'
 
 const job = (title: string, details: string[] = []) => isItJob({ title, details })
 
-describe('périmètre informatique : appels d\'offres', () => {
-  it('retient les services informatiques et logiciels d\'après la classification CPV', () => {
-    assert.equal(isItTender({ title: 'Prestations fictives', cpv: ['72212000'] }), true, 'développement de logiciels')
-    assert.equal(isItTender({ title: 'Acquisition fictive', cpv: ['45200000', '48000000'] }), true, 'un code sur plusieurs suffit')
+type TenderFields = Partial<Pick<Listing, 'mainCpv' | 'descriptors'>>
+const followed = (title: string, fields: TenderFields = {}, rules = DEFAULT_IT_RULES) => isItTender({ organisationId: 'insee', title, ...fields }, rules)
+const otherBuyer = (title: string, fields: TenderFields = {}, rules = DEFAULT_IT_RULES) =>
+  isItTender({ organisationId: OTHER_BUYERS_ID, title, ...fields }, rules)
+
+describe('périmètre informatique : appels d\'offres, deux indices concordants', () => {
+  it('retient un avis au code CPV principal informatique dont l\'intitulé contient un mot-clé', () => {
+    assert.equal(otherBuyer('Tierce maintenance applicative fictive', { mainCpv: '72267100' }), true)
+    assert.equal(otherBuyer('Acquisition fictive d\'un progiciel comptable', { mainCpv: '48440000' }), true)
+    assert.equal(followed('Tierce maintenance applicative fictive', { mainCpv: '72267100' }), true)
   })
 
-  it('écarte le matériel, les télécommunications et les travaux, même avec un intitulé informatique', () => {
-    assert.equal(isItTender({ title: 'Achat de postes informatiques fictifs', cpv: ['30213000'] }), false)
-    assert.equal(isItTender({ title: 'Maintenance informatique fictive', cpv: ['50312000'] }), false)
-    assert.equal(isItTender({ title: 'Lignes télécom fictives', cpv: ['64200000'] }), false)
+  it('pour un organisme suivi, accepte aussi le vocabulaire du filtre informatique dans l\'intitulé', () => {
+    assert.equal(followed('Prestations informatiques fictives', { mainCpv: '72500000' }), true)
+    assert.equal(otherBuyer('Prestations informatiques fictives', { mainCpv: '72500000' }), false, 'autre acheteur : mot-clé exigé')
   })
 
-  it('retient les descripteurs BOAMP « Informatique (prestations de services) » et « Logiciel »', () => {
-    assert.equal(isItTender({ title: 'Marché fictif', descriptors: ['Informatique (prestations de services)'] }), true)
-    assert.equal(isItTender({ title: 'Marché fictif', descriptors: ['Logiciel'] }), true)
-    assert.equal(isItTender({ title: 'Marché fictif', descriptors: ['Informatique (matériel)'] }), false)
+  it('ne lit que le code CPV principal : un code secondaire « logiciel » ne suffit pas', () => {
+    // Relevés le 27/10/2026 : imprimantes (code secondaire 48820000), vidéosurveillance (48000000).
+    assert.equal(followed('Renouvellement fictif des imprimantes et de leur logiciel', { mainCpv: '30232150' }), false)
+    assert.equal(otherBuyer('Vidéodétection fictive par intelligence artificielle', { mainCpv: '32323500' }), false)
   })
 
-  it('juge sur l\'intitulé un avis sans aucune classification', () => {
-    assert.equal(isItTender({ title: 'Assistance à maîtrise d\'ouvrage du système d\'information fictif' }), true)
-    assert.equal(isItTender({ title: 'Rénovation fictive du hall d\'accueil' }), false)
-    assert.equal(isItTender({ title: 'Travaux fictifs de câblage informatique' }), false, 'travaux hors périmètre')
-  })
-})
-
-describe('périmètre informatique : mots-clés des appels d\'offres', () => {
-  it('retient un avis classé hors informatique dont l\'intitulé ou la description contient un mot-clé', () => {
-    assert.equal(isItTender({ title: 'Accompagnement fictif à la gouvernance des données', cpv: ['79411000'] }), true, 'conseil (CPV 79)')
-    assert.equal(
-      isItTender({ title: 'Accompagnement fictif de la direction financière', description: 'Lot 2 : mise en place d\'un data steward.', cpv: ['79411000'] }),
-      true,
-      'mot-clé dans la description',
-    )
-    assert.equal(isItTender({ title: 'Refonte du site internet de la commune fictive', descriptors: ['Communication'] }), true)
+  it('écarte un avis classé informatique dont l\'intitulé ne dit rien d\'informatique', () => {
+    // Relevé le 27/10/2026 : gestion documentaire classée « introduction de données » (CPV 72312000).
+    assert.equal(otherBuyer('Prestations fictives d\'assistance de gestion documentaire', { mainCpv: '72312000' }), false)
+    assert.equal(followed('Prestations fictives d\'assistance de gestion documentaire', { mainCpv: '72312000' }), false)
+    assert.equal(followed('Marché fictif', { descriptors: ['Informatique (prestations de services)'] }), false)
   })
 
-  it('écarte les termes trop larges relevés sur les vrais avis (bâtiment, communication, formation)', () => {
-    assert.equal(isItTender({ title: 'Assistance à maîtrise d\'ouvrage fictive pour la construction d\'un gymnase', cpv: ['71000000'] }), false)
-    assert.equal(isItTender({ title: 'Refonte fictive de la signalétique', cpv: ['79822500'] }), false)
-    assert.equal(isItTender({ title: 'Formations fictives à la gestion des risques', cpv: ['80500000'] }), false)
-    assert.equal(isItTender({ title: 'Abonnement fictif à des bases de données juridiques', cpv: ['79980000'] }), false)
+  it('écarte un avis classé hors informatique, même avec un mot-clé dans l\'intitulé', () => {
+    assert.equal(otherBuyer('Conception fictive d\'un stand sur l\'intelligence artificielle', { mainCpv: '79950000' }), false)
+    assert.equal(otherBuyer('Formation fictive aux outils d\'intelligence artificielle', { mainCpv: '80511000' }), false)
+    assert.equal(followed('Agence de voyages fictive avec dématérialisation des factures', { mainCpv: '63510000' }), false)
+    assert.equal(followed('Maintenance corrective fictive des matériels de cuisine', { mainCpv: '50883000' }), false)
   })
 
-  it('ne retient pas un mot-clé quand l\'intitulé contient une exclusion, et ne cherche les exclusions que dans l\'intitulé', () => {
-    assert.equal(isItTender({ title: 'Travaux fictifs avec logiciel de supervision', cpv: ['45300000'] }), false)
-    assert.equal(
-      isItTender({ title: 'Prestations fictives', description: 'Travaux de développement : tierce maintenance applicative.', cpv: ['79000000'] }),
-      true,
-    )
+  it('sans code CPV, se fie aux descripteurs du BOAMP', () => {
+    assert.equal(otherBuyer('Logiciel fictif de gestion des salles', { descriptors: ['Logiciel'] }), true)
+    assert.equal(followed('Logiciel fictif de gestion des salles', { descriptors: ['Informatique (matériel)'] }), false)
+    assert.equal(followed('Logiciel fictif', { mainCpv: '30200000', descriptors: ['Logiciel'] }), false, 'le code principal l\'emporte')
+  })
+
+  it('sans aucune classification, ne garde que l\'avis d\'un organisme suivi dont l\'intitulé parle d\'informatique', () => {
+    assert.equal(followed('Assistance à maîtrise d\'ouvrage du système d\'information fictif'), true)
+    assert.equal(followed('Rénovation fictive du hall d\'accueil'), false)
+    assert.equal(otherBuyer('Tierce maintenance applicative fictive'), false, 'un seul indice')
+  })
+
+  it('ne lit pas la description', () => {
+    const listing: Listing = {
+      kind: 'tender', id: 'T', organisationId: OTHER_BUYERS_ID, title: 'Fourniture fictive de portiers de rue', url: 'https://exemple.test/T',
+      details: [], description: 'Maintenance évolutive du logiciel de supervision.', mainCpv: '72000000',
+    }
+    assert.equal(isItTender(listing), false)
+  })
+
+  it('écarte un intitulé contenant une exclusion (travaux)', () => {
+    assert.equal(otherBuyer('Travaux fictifs avec logiciel de supervision', { mainCpv: '48000000' }), false)
+    assert.equal(followed('Travaux fictifs de câblage informatique'), false)
   })
 
   it('ne reconnaît les sigles des mots-clés qu\'en majuscules', () => {
-    assert.equal(isItTender({ title: 'Prestations fictives de TMA', cpv: ['79000000'] }), true)
-    assert.equal(isItTender({ title: 'Prestations fictives de tma', cpv: ['79000000'] }), false)
+    assert.equal(otherBuyer('Prestations fictives de TMA', { mainCpv: '72000000' }), true)
+    assert.equal(otherBuyer('Prestations fictives de tma', { mainCpv: '72000000' }), false)
   })
 
   it('écarte un avis classé informatique dont l\'intitulé ne parle que d\'infrastructure, sauf avec un mot-clé', () => {
-    assert.equal(isItTender({ title: 'Fourniture de serveurs fictifs', cpv: ['72500000'] }), false)
-    assert.equal(isItTender({ title: 'Fourniture de serveurs fictifs et d\'un logiciel de sauvegarde', cpv: ['72500000'] }), true)
-    assert.equal(isItTender({ title: 'Prestations informatiques fictives', cpv: ['72500000'] }), true, 'rien ne dit infrastructure')
+    assert.equal(followed('Fourniture de serveurs informatiques fictifs', { mainCpv: '72500000' }), false)
+    assert.equal(followed('Fourniture de serveurs fictifs et d\'un logiciel de sauvegarde', { mainCpv: '72500000' }), true)
   })
 
-  it('sans mot-clé dans les réglages, garde la règle d\'avant (classification, puis intitulé)', () => {
+  it('sans mot-clé dans les réglages, ne garde aucun avis d\'un autre acheteur', () => {
     const rules = itRulesFrom({ ...DEFAULT_SETTINGS, tenderKeywords: { allBuyers: false, families: [], infrastructurePhrases: [] } })
-    assert.equal(isItTender({ title: 'Accompagnement fictif à la gouvernance des données', cpv: ['79411000'] }, rules), false)
-    assert.equal(isItTender({ title: 'Fourniture de serveurs fictifs', cpv: ['72500000'] }, rules), true)
+    assert.equal(otherBuyer('Tierce maintenance applicative fictive', { mainCpv: '72267100' }, rules), false)
+    assert.equal(followed('Prestations informatiques fictives', { mainCpv: '72500000' }, rules), true)
   })
 })
 

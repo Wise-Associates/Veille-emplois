@@ -1,6 +1,7 @@
 # 0006 — Appels d'offres de tous les acheteurs, par mots-clés
 
-Date : 27 octobre 2026 · Statut : acceptée (étend les ADR 0004 et 0005)
+Date : 27 octobre 2026 · Statut : acceptée (étend les ADR 0004 et 0005) ; règle de sélection (points 2 à 4) remplacée
+le 27/10/2026 par l'[ADR 0007](0007-appels-d-offres-deux-indices-concordants.md)
 
 ## Contexte
 

@@ -36,8 +36,8 @@ describe('avis TED', () => {
     })
   })
 
-  it('reprend les codes CPV de l\'avis, sans doublon', () => {
-    assert.deepEqual(tedNoticeToListing(notice({ 'classification-cpv': ['72000000', '72000000', '48000000'] }))?.cpv, ['72000000', '48000000'])
+  it('reprend le code CPV principal de la procédure', () => {
+    assert.equal(tedNoticeToListing(notice({ 'main-classification-proc': ['72000000'] }))?.mainCpv, '72000000')
   })
 
   it('écarte un avis dont aucun acheteur n\'est suivi', () => {
@@ -122,21 +122,25 @@ describe('TED : recherche chez tous les acheteurs', () => {
     assert.match(queries[1]?.query ?? '', /\(title-proc~"ia generative" OR title-proc~LLM\)$/)
   })
 
-  it('garde les avis exacts d\'autres acheteurs sous leur nom, sans doublon, sans avis au désordre ni avis d\'organisme suivi', async () => {
+  it('garde les avis d\'autres acheteurs à mot-clé exact et code CPV principal informatique, sous leur nom, sans doublon ni avis d\'organisme suivi', async () => {
     const other = { 'buyer-name': { fra: ['COMMUNE FICTIVE'] }, 'buyer-identifier': ['21000000000000'] }
-    const byCpv = notice({ ...other, 'publication-number': '700010-2026', 'classification-cpv': ['72212000'] })
-    const exact = notice({ ...other, 'publication-number': '700011-2026', 'title-proc': { fra: 'Solution MDM fictive' } })
-    const disordered = notice({ ...other, 'publication-number': '700012-2026', 'title-proc': { fra: 'Développement fictif du territoire' } })
-    const followed = notice({ 'publication-number': '700013-2026', 'classification-cpv': ['72212000'] })
+    const titled = (number: string, title: string, mainCpv: string, fields: Partial<TedNotice> = other) =>
+      notice({ ...fields, 'publication-number': number, 'title-proc': { fra: title }, 'main-classification-proc': [mainCpv] })
+    const byCpv = titled('700010-2026', 'Plateforme fictive de gouvernance des données', '72212000')
+    const exact = titled('700011-2026', 'Solution MDM fictive', '48000000')
+    const disordered = titled('700012-2026', 'Développement fictif du territoire', '72000000')
+    const classifiedOnly = titled('700013-2026', 'Assistance fictive de gestion documentaire', '72312000')
+    const keywordOnly = titled('700014-2026', 'Stand fictif sur la gouvernance des données', '79950000')
+    const followed = titled('700015-2026', 'Gouvernance des données fictive', '72212000', {})
     const http = {
       json: async (_url: string, schema: { parse(value: unknown): unknown }, options: { json: { query: string } }) => {
         const { query } = options.json
-        const notices = query.includes('classification-cpv') ? [byCpv, exact, followed] : [exact, disordered]
+        const notices = query.includes('classification-cpv') ? [byCpv, exact, classifiedOnly, followed] : [exact, disordered, keywordOnly]
         return schema.parse({ notices, totalNoticeCount: notices.length })
       },
     } as unknown as HttpClient
     const batch = await new TedAllBuyersSource(http, () => new Date('2026-10-22T05:00:00Z'), organisationsFrom(settings), search).fetch()
-    assert.deepEqual(batch.listings.map((l) => l.id), ['700010-2026', '700011-2026'], 'Expertise France laissée à la source TED')
+    assert.deepEqual(batch.listings.map((l) => l.id), ['700010-2026', '700011-2026'], 'un seul indice : écarté ; Expertise France laissée à la source TED')
     assert.ok(batch.listings.every((l) => l.organisationId === OTHER_BUYERS_ID && l.buyer === 'COMMUNE FICTIVE'))
     assert.deepEqual(batch.ignoredIds, [])
   })

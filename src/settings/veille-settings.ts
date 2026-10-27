@@ -96,7 +96,7 @@ const SettingsSchema = z
     itScope: z.object({
       enabled: z.boolean(),
       cpvPrefixes: list(z.string().regex(/^\d{1,8}$/), 50),
-      // Sans guillemet ni barre oblique inverse : les descripteurs entrent dans la requête BOAMP de tous les acheteurs.
+      // Sans guillemet ni barre oblique inverse : même contrainte que dans MyBestConsultant (format commun).
       boampDescriptors: list(z.string().max(120).regex(/^[^"\\]+$/, 'descripteur sans guillemet ni \\'), 50),
       phrases: list(Phrase, 1000),
       acronyms: list(Acronym, 200),

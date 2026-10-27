@@ -70,25 +70,30 @@ Décision du 23/10/2026 ([docs/adr/0004-perimetre-informatique.md](docs/adr/0004
 dans `src/it-scope.ts`, valeurs (codes CPV, descripteurs, expressions, sigles, exclusions) dans les **réglages**
 (voir « Réglages ») :
 
-- **Appels d'offres** (règles complétées le 27/10/2026,
-  [docs/adr/0006-appels-d-offres-de-tous-les-acheteurs.md](docs/adr/0006-appels-d-offres-de-tous-les-acheteurs.md)) :
-  - un **mot-clé des appels d'offres** (10 familles : SaaS et logiciels, développement, refonte et TMA,
-    digitalisation, gouvernance et plateformes de données, BI, IA, conseil SI / AMOA, outils de risques et de
-    conformité) dans l'intitulé ou la description suffit, quelle que soit la classification ; une exclusion
-    (« travaux »…) dans l'intitulé l'annule ;
-  - sinon, services informatiques et logiciels d'après la classification européenne de l'avis (CPV 72 « services
-    informatiques », CPV 48 « logiciels et systèmes d'information ») ou les descripteurs du BOAMP (« Informatique
-    (prestations de services) », « Logiciel »), sauf un intitulé d'**infrastructure seule** (serveurs, réseau,
-    matériel, antennes relais) ;
-  - hors périmètre sans mot-clé : matériel (CPV 30), maintenance (50), télécommunications (64), travaux (45), même
-    pour un intitulé informatique. Un avis sans aucune classification (petits avis) est jugé sur son intitulé.
+- **Appels d'offres** (règle du 27/10/2026,
+  [docs/adr/0007-appels-d-offres-deux-indices-concordants.md](docs/adr/0007-appels-d-offres-deux-indices-concordants.md)) :
+  envoyés seulement si **deux indices concordent** :
+  - le **code CPV principal** de l'avis est informatique (CPV 72 « services informatiques », CPV 48 « logiciels et
+    systèmes d'information »). Sans code CPV (petits avis du BOAMP), un descripteur « Informatique (prestations de
+    services) » ou « Logiciel » en tient lieu. Les codes secondaires ne comptent pas : un achat d'imprimantes en porte
+    souvent un « logiciel » ;
+  - l'**intitulé** contient un **mot-clé des appels d'offres** (10 familles : SaaS et logiciels, développement,
+    refonte et TMA, digitalisation, gouvernance et plateformes de données, BI, IA, conseil SI / AMOA, outils de
+    risques et de conformité). Pour un organisme suivi, le vocabulaire du filtre informatique compte aussi. La
+    description n'est pas lue.
+
+  Un avis classé hors informatique (matériel, maintenance, formation, conseil…) est écarté, même avec un mot-clé. Sans
+  aucune classification, seul un avis d'organisme suivi peut passer, sur son intitulé. Une exclusion (« travaux »…) dans
+  l'intitulé écarte l'avis. Un intitulé d'**infrastructure seule** (serveurs, réseau, matériel, antennes relais) sans
+  mot-clé aussi.
 
   **Tous les acheteurs** (réglage activé par défaut) : au BOAMP et dans TED, une recherche par famille de mots-clés dans
-  l'intitulé des avis, plus les avis classés informatique, revérifiés sur les expressions exactes. Sources à part dans
+  l'intitulé des avis (dans TED, plus les avis classés informatique), revérifiés avec la règle ci-dessus. Sources à part dans
   le récapitulatif et le fichier d'état (« BOAMP — tous les acheteurs », « TED — tous les acheteurs ») : elles ne gardent
-  que les acheteurs non suivis, dont les avis partent sous « Autres acheteurs », avec l'acheteur comme client. Les termes trop larges de la liste de départ
-  (« assistance à maîtrise d'ouvrage » seul, « refonte » seul, « reporting »…) ont été retirés après mesure : voir
-  l'ADR 0006.
+  que les acheteurs non suivis, dont les avis partent sous « Autres acheteurs », avec l'acheteur comme client. Les termes
+  trop larges de la liste de départ (« assistance à maîtrise d'ouvrage » seul, « refonte » seul, « reporting »…) ont
+  été retirés après mesure : voir l'ADR 0006. Mesure du 27/10/2026 : 74 appels d'offres ouverts gardés, tous
+  informatiques (ADR 0007).
 - **Offres d'emploi** : métiers techniques, données / IA / cybersécurité, projets informatiques et SI métier (MOA,
   business analyst, ERP), métiers du numérique (UX/UI, web), d'après l'intitulé et la catégorie donnée par la source
   (domaine « Numérique » de Choisir le service public, département d'Expertise France). Les sigles (SI, DSI, MOA…) ne
@@ -104,7 +109,7 @@ par l'adresse de son site) est écarté.
   d'offres » de l'admin de MyBestConsultant,
   pris en compte au passage suivant ; vérifier sur les offres réelles avec `npm run veille:essai` (avec
   `VEILLE_CONFIG_URL` et `VEILLE_CONFIG_TOKEN`), dont le journal donne, par source, le nombre d'annonces informatiques et
-  hors informatique. **Changer la logique** (classification d'abord, sigles en majuscules…) : `src/it-scope.ts`, avec le
+  hors informatique. **Changer la logique** (deux indices, sigles en majuscules…) : `src/it-scope.ts`, avec le
   cas dans `src/it-scope.spec.ts`.
 - **Élargir le périmètre** ne renvoie pas les offres déjà écartées : elles sont retenues comme vues. Pour les
   rattraper, supprimer la clé de la source dans `sources` d'`etat.json` (voir « État de la veille ») : toutes ses

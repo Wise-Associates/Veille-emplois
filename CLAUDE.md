@@ -41,11 +41,14 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
   (`src/lib/veille/config.ts`, même `schemaVersion`) : toute évolution se fait dans les deux projets. Les expressions
   des réglages sont normalisées (`normalizePhrase`, `src/phrases.ts`) avant tout usage : elles ne contiennent alors que
   `[a-z0-9 *]` et peuvent entrer dans une requête BOAMP ou une expression régulière.
+- Un appel d'offres n'est envoyé que si **deux indices concordent** (ADR 0007, `isItTender`) : code CPV **principal**
+  informatique (à défaut de code, descripteur du BOAMP) et mot-clé dans l'**intitulé** (pour un organisme suivi, le
+  vocabulaire du filtre informatique compte aussi). Jamais un code CPV secondaire ni la description : ils ont fait
+  envoyer des imprimantes et des matériels de cuisine. Ne pas assouplir sans mesure sur les avis ouverts.
 - Les appels d'offres sont aussi cherchés **chez tous les acheteurs**, par mots-clés (ADR 0006,
   `src/tenders/all-buyers.ts`) : seulement dans l'intitulé (le texte complet des avis contient « dématérialisation »
-  partout) ; chaque avis renvoyé est revérifié sur les expressions exactes (`isItTender`). Dans TED, jamais un terme
-  seul de moins de trois lettres (il renvoie tous les avis). Avant d'ajouter un mot-clé large, mesurer ce qu'il ramène
-  sur les avis ouverts (`npm run veille:essai`).
+  partout). Dans TED, jamais un terme seul de moins de trois lettres (il renvoie tous les avis). Avant d'ajouter un
+  mot-clé large, mesurer ce qu'il ramène sur les avis ouverts (`npm run veille:essai`).
 - Seules les offres informatiques sont envoyées (ADR 0004) : toute évolution de la **logique** du périmètre
   (`src/it-scope.ts`) ou de la reconnaissance d'acheteur (`src/tenders/buyer-match.ts`) s'accompagne d'un cas dans
   leur `*.spec.ts` (y compris le faux positif ou l'homonyme à écarter) et d'une vérification sur les offres réelles
