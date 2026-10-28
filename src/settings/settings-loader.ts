@@ -32,11 +32,26 @@ export class SettingsLoader {
   private async fetchRemote(): Promise<RemoteSettings> {
     const remote = this.config.settings
     if (!remote) return null
+    // Redirection vers une autre origine (mybestconsultant.fr → www.mybestconsultant.fr) : fetch y retire l'en-tête
+    // Authorization et la route répond 401 sans dire pourquoi. Le jeton ne va qu'à l'origine configurée : une telle
+    // redirection est refusée et signalée avec l'adresse à mettre dans VEILLE_CONFIG_URL.
+    const { origin } = new URL(remote.url)
+    let redirectedTo = ''
+    const sameOrigin = (next: URL) => {
+      if (next.origin === origin) return true
+      redirectedTo = next.href
+      return false
+    }
     try {
       // Délai court, une nouvelle tentative (HttpClient) : MyBestConsultant indisponible ne doit pas retarder le passage.
-      const body = await this.http.json(remote.url, responseSchema, { headers: { Authorization: `Bearer ${remote.token}` }, timeoutMs: 15_000 })
+      const body = await this.http.json(remote.url, responseSchema, {
+        headers: { Authorization: `Bearer ${remote.token}` },
+        timeoutMs: 15_000,
+        allowRedirect: sameOrigin,
+      })
       return { ok: true, version: body.version, savedAt: body.savedAt, value: body.config }
     } catch (error) {
+      if (redirectedTo) return { ok: false, error: `VEILLE_CONFIG_URL redirigée vers ${redirectedTo} : indiquez directement cette adresse` }
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   }
