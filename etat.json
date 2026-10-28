@@ -20,6 +20,7 @@
     "3083b56d-06e1-4a2f-beaa-8f8fdd4092e0": "2026-10-27",
     "32213bec-03c4-4a08-a2fe-6b97095f3a12": "2026-10-27",
     "33eac9ca-89c9-4a4f-a75f-d7ddcfb896aa": "2026-10-27",
+    "3655ea9e-46d1-4bf5-9268-f99c52ab2fe5": "2026-10-28",
     "36f59980-bcd9-4aa3-834f-0c2ca6c558ce": "2026-10-23",
     "3ac06613-0ad0-4604-9190-07d599fd3b47": "2026-10-27",
     "3b395051-bb57-4307-b13a-bdfdc04b831c": "2026-10-27",
@@ -87,6 +88,7 @@
     "b0b7dd4a-dbf4-4b5d-ae31-8734fea821e5": "2026-10-27",
     "b10b63cf-8a85-4d95-a960-cb707940f2b7": "2026-10-23",
     "b26f0270-0d9b-433f-b4b3-5c625a149162": "2026-10-23",
+    "b40d282a-58ec-4e14-82cc-ecbcb3d4e762": "2026-10-28",
     "b6ba30f6-5a76-460b-81a9-91c8ce4abeed": "2026-10-27",
     "b76da220-62ee-4d39-bb09-06b334a5b44e": "2026-10-27",
     "bc4adf9f-ff2b-411e-9988-1ec7e1f29d59": "2026-10-27",
@@ -134,11 +136,934 @@
     "fc49d2df-5a38-4e15-b204-c5cdade685a0": "2026-10-27",
     "fd61932f-4e04-4352-8634-f9108662cc91": "2026-10-27"
   },
+  "settings": {
+    "savedAt": "2026-10-27T18:46:58.982+00:00",
+    "value": {
+      "itScope": {
+        "acronyms": [
+          "SI",
+          "DSI",
+          "IT",
+          "IA",
+          "AI",
+          "BI",
+          "ERP",
+          "SAP",
+          "SIRH",
+          "SIG",
+          "SSI",
+          "RSSI",
+          "SOC",
+          "MOA",
+          "MOE",
+          "AMOA",
+          "PMO",
+          "UX",
+          "UI",
+          "QA",
+          "SRE",
+          "DBA",
+          "PO",
+          "CRM",
+          "API",
+          "ETL",
+          "TMA",
+          "CTO",
+          "CIO"
+        ],
+        "boampDescriptors": [
+          "Informatique (prestations de services)",
+          "Logiciel"
+        ],
+        "cpvPrefixes": [
+          "72",
+          "48"
+        ],
+        "enabled": true,
+        "exclusionPhrases": [
+          "travaux",
+          "maitrise d ouvrage deleguee"
+        ],
+        "phrases": [
+          "informatique",
+          "informatiques",
+          "informaticien*",
+          "numerique",
+          "numeriques",
+          "digital*",
+          "digitaux",
+          "dematerialisation",
+          "logiciel",
+          "logiciels",
+          "progiciel*",
+          "systeme d information",
+          "systemes d information",
+          "systeme d informations",
+          "systemes d informations",
+          "saas",
+          "cloud",
+          "developpeur*",
+          "developpeuse*",
+          "developpement informatique",
+          "developpement logiciel",
+          "developpement web",
+          "developpement d applications",
+          "full stack",
+          "fullstack",
+          "back end",
+          "backend",
+          "front end",
+          "frontend",
+          "devops",
+          "devsecops",
+          "kubernetes",
+          "java",
+          "python",
+          "javascript",
+          "typescript",
+          "php",
+          "react",
+          "angular",
+          "architecte logiciel",
+          "architecte technique",
+          "architecte solution*",
+          "architecte cloud",
+          "architecte data",
+          "architecte d entreprise",
+          "architecte applicatif",
+          "architecte reseau*",
+          "architecte securite",
+          "architecte des systemes",
+          "tech lead",
+          "techlead",
+          "lead dev",
+          "ingenieur logiciel",
+          "ingenieur developpement",
+          "ingenieur systeme*",
+          "ingenieur reseau*",
+          "ingenieur cloud",
+          "ingenieur securite",
+          "administrateur systeme*",
+          "administrateur reseau*",
+          "administrateur d outils",
+          "administratrice systeme*",
+          "technicien informatique",
+          "technicien reseau*",
+          "technicienne informatique",
+          "technicien support",
+          "support informatique",
+          "support utilisateur*",
+          "helpdesk",
+          "help desk",
+          "service desk",
+          "poste de travail",
+          "postes de travail",
+          "exploitation informatique",
+          "production informatique",
+          "infrastructure informatique",
+          "infrastructures informatiques",
+          "systemes et reseaux",
+          "reseaux et telecom*",
+          "testeur",
+          "testeuse",
+          "test logiciel",
+          "tests logiciels",
+          "recette applicative",
+          "integrateur",
+          "integratrice",
+          "applicatif",
+          "applicative",
+          "applicatifs",
+          "applicatives",
+          "responsable d applications",
+          "gestionnaire d applications",
+          "api",
+          "data",
+          "big data",
+          "datascience",
+          "science des donnees",
+          "sciences des donnees",
+          "ingenieur de donnees",
+          "ingenieur des donnees",
+          "analyste de donnees",
+          "architecte de donnees",
+          "gestion des donnees",
+          "gouvernance des donnees",
+          "base de donnees",
+          "bases de donnees",
+          "entrepot de donnees",
+          "donnees massives",
+          "decisionnel",
+          "decisionnelle",
+          "business intelligence",
+          "intelligence artificielle",
+          "machine learning",
+          "apprentissage automatique",
+          "cybersecurite",
+          "cyber",
+          "cybersecurity",
+          "securite informatique",
+          "securite des systemes d information",
+          "pentest*",
+          "risque informatique",
+          "risques informatiques",
+          "chef de projet informatique",
+          "chef de projet technique",
+          "cheffe de projet informatique",
+          "product owner",
+          "product manager",
+          "proxy po",
+          "scrum",
+          "agile",
+          "maitrise d ouvrage",
+          "business analyst",
+          "analyste fonctionnel*",
+          "analyste metier",
+          "consultant fonctionnel",
+          "consultante fonctionnelle",
+          "erp",
+          "sap",
+          "oracle",
+          "workday",
+          "salesforce",
+          "sirh",
+          "crm",
+          "web*",
+          "internet",
+          "intranet",
+          "site internet",
+          "application mobile",
+          "applications mobiles",
+          "ux",
+          "ui",
+          "ergonome",
+          "ux designer",
+          "designer ux"
+        ]
+      },
+      "organisations": [
+        {
+          "enabled": true,
+          "id": "dgfip",
+          "name": "DGFiP",
+          "tenderRules": [
+            {
+              "excludedNames": [
+                "aafip",
+                "arfip",
+                "association"
+              ],
+              "names": [
+                "direction generale des finances publiques",
+                "direction generale finances publiques",
+                "dgfip"
+              ],
+              "note": "Associations du personnel : pas des achats de la DGFiP.",
+              "requiredText": [],
+              "sirens": [
+                "130004955"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "dgfip-reseau",
+          "name": "DGFiP — directions régionales et départementales",
+          "tenderRules": [
+            {
+              "excludedNames": [
+                "aafip",
+                "arfip",
+                "association",
+                "ecole nationale des finances publiques"
+              ],
+              "names": [
+                "drfip",
+                "ddfip",
+                "direction regionale des finances publiques",
+                "direction departementale des finances publiques"
+              ],
+              "note": "Associations du personnel et école : pas des achats du réseau.",
+              "requiredText": [],
+              "sirens": []
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "dinum",
+          "name": "DINUM",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "dinum",
+                "direction interministerielle du numerique"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "130025265"
+              ]
+            },
+            {
+              "excludedNames": [],
+              "names": [
+                "services du premier ministre",
+                "premier ministre",
+                "spm dsaf",
+                "dsaf"
+              ],
+              "note": "La DINUM n'achète pas en son nom : ses marchés passent par les Services du Premier ministre (SPM-DSAF), qui achètent aussi pour d'autres services. Seuls ceux qui la citent sont retenus.",
+              "requiredText": [
+                "dinum",
+                "direction interministerielle du numerique"
+              ],
+              "sirens": []
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "insee",
+          "name": "INSEE",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "insee",
+                "institut national de la statistique*"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "120027016"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "asp",
+          "name": "ASP (Agence de services et de paiement)",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "agence de services et de paiement",
+                "agence de service et de paiement",
+                "agences de services et de paiement",
+                "a s p"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "130006372"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "ape",
+          "name": "APE (Agence des participations de l'État)",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "agence des participations de l etat"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "130004989"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "acoss",
+          "name": "Urssaf Caisse nationale (ACOSS)",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "acoss",
+                "urssaf caisse nationale",
+                "agence centrale des organismes de securite sociale"
+              ],
+              "note": "Jamais « urssaf » seul : une quarantaine d'Urssaf régionales achètent en leur nom.",
+              "requiredText": [],
+              "sirens": [
+                "180035016"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "cnam",
+          "name": "CNAM (Caisse nationale de l'Assurance Maladie)",
+          "tenderRules": [
+            {
+              "excludedNames": [
+                "conservatoire",
+                "arts et metiers"
+              ],
+              "names": [
+                "caisse nationale de l assurance maladie",
+                "caisse nationale d assurance maladie",
+                "caisse nationale assurance maladie",
+                "caisse nationale de l assur maladie",
+                "cnam"
+              ],
+              "note": "« CNAM » désigne aussi le Conservatoire national des arts et métiers.",
+              "requiredText": [],
+              "sirens": [
+                "180035024"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "ucanss",
+          "name": "UCANSS (achats mutualisés de la Sécurité sociale)",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "ucanss",
+                "union des caisses nationales de securite sociale"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "784621435"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "banque-postale",
+          "name": "La Banque Postale",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "banque postale"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "421100645"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "sfil",
+          "name": "SFIL",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "sfil",
+                "caffil",
+                "caisse francaise de financement local"
+              ],
+              "note": "421318064 : CAFFIL, filiale de refinancement de SFIL.",
+              "requiredText": [],
+              "sirens": [
+                "428782585",
+                "421318064"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "crh",
+          "name": "CRH (Caisse de Refinancement de l'Habitat)",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "caisse de refinancement de l habitat"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "333614980"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "cour-des-comptes",
+          "name": "Cour des comptes",
+          "tenderRules": [
+            {
+              "excludedNames": [
+                "europeenne"
+              ],
+              "names": [
+                "cour des comptes"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "110000288"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "autorite-concurrence",
+          "name": "Autorité de la concurrence",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "autorite de la concurrence"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "110000163"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "proparco",
+          "name": "Proparco",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "proparco*"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "310792205"
+              ]
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "id": "expertise-france",
+          "name": "Expertise France",
+          "tenderRules": [
+            {
+              "excludedNames": [],
+              "names": [
+                "expertise france"
+              ],
+              "note": "",
+              "requiredText": [],
+              "sirens": [
+                "808734792"
+              ]
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 1,
+      "sources": [
+        {
+          "enabled": true,
+          "id": "boamp",
+          "kind": "boamp"
+        },
+        {
+          "enabled": true,
+          "id": "ted",
+          "kind": "ted"
+        },
+        {
+          "codes": [
+            "974"
+          ],
+          "enabled": true,
+          "id": "csp-dgfip",
+          "kind": "csp",
+          "label": "Choisir le service public — DGFiP",
+          "organisationId": "dgfip"
+        },
+        {
+          "codes": [
+            "10668"
+          ],
+          "enabled": true,
+          "id": "csp-dinum",
+          "kind": "csp",
+          "label": "Choisir le service public — DINUM",
+          "organisationId": "dinum"
+        },
+        {
+          "codes": [
+            "978"
+          ],
+          "enabled": true,
+          "id": "csp-insee",
+          "kind": "csp",
+          "label": "Choisir le service public — INSEE",
+          "organisationId": "insee"
+        },
+        {
+          "codes": [
+            "1422"
+          ],
+          "enabled": true,
+          "id": "csp-asp",
+          "kind": "csp",
+          "label": "Choisir le service public — ASP",
+          "organisationId": "asp"
+        },
+        {
+          "codes": [
+            "1012"
+          ],
+          "enabled": true,
+          "id": "csp-ape",
+          "kind": "csp",
+          "label": "Choisir le service public — APE",
+          "organisationId": "ape"
+        },
+        {
+          "codes": [
+            "23"
+          ],
+          "enabled": true,
+          "id": "csp-cour-des-comptes",
+          "kind": "csp",
+          "label": "Choisir le service public — Cour des comptes et chambres régionales",
+          "organisationId": "cour-des-comptes"
+        },
+        {
+          "codes": [
+            "24",
+            "13385"
+          ],
+          "enabled": true,
+          "id": "csp-autorite-concurrence",
+          "kind": "csp",
+          "label": "Choisir le service public — Autorité de la concurrence",
+          "organisationId": "autorite-concurrence"
+        },
+        {
+          "enabled": true,
+          "id": "autorite-concurrence-carrieres",
+          "kind": "builtin"
+        },
+        {
+          "enabled": true,
+          "id": "banque-postale-carrieres",
+          "kind": "builtin"
+        },
+        {
+          "enabled": true,
+          "id": "sfil-carrieres",
+          "kind": "rss",
+          "label": "SFIL — site carrières",
+          "organisationId": "sfil",
+          "readOfferPage": false,
+          "url": "https://sfil.fr/offres-emploi/feed/"
+        },
+        {
+          "enabled": true,
+          "id": "crh-site",
+          "kind": "builtin"
+        },
+        {
+          "enabled": true,
+          "id": "afd-carrieres",
+          "kind": "builtin"
+        },
+        {
+          "enabled": true,
+          "id": "expertise-france-carrieres",
+          "kind": "rss",
+          "label": "Expertise France — site carrières",
+          "organisationId": "expertise-france",
+          "readOfferPage": true,
+          "url": "https://expertise-france.gestmax.fr/feed/rss/lang/fr_FR?limit=200"
+        }
+      ],
+      "tenderKeywords": {
+        "allBuyers": true,
+        "families": [
+          {
+            "acronyms": [],
+            "id": "saas-logiciels",
+            "label": "SaaS, logiciels et plateformes",
+            "phrases": [
+              "saas",
+              "logiciel*",
+              "progiciel*",
+              "logiciel en mode saas",
+              "logiciel en tant que service",
+              "solution* saas",
+              "solution* logicielle*",
+              "plateforme* logicielle*",
+              "plateforme* numerique*",
+              "plateforme* digitale*",
+              "licence* logicielle*",
+              "abonnement* logiciel*",
+              "editeur* de logiciel*"
+            ]
+          },
+          {
+            "acronyms": [
+              "API"
+            ],
+            "id": "developpement-applications",
+            "label": "Développement d'applications",
+            "phrases": [
+              "developpement* logiciel*",
+              "developpement d application*",
+              "developpement* applicatif*",
+              "conception et developpement",
+              "conception et realisation d une application",
+              "application* metier*",
+              "application* web",
+              "application* mobile*",
+              "application* specifique*",
+              "developpement sur mesure",
+              "interface* applicative*",
+              "interoperabilite applicative"
+            ]
+          },
+          {
+            "acronyms": [
+              "TMA"
+            ],
+            "id": "refonte-maintenance",
+            "label": "Refonte, modernisation et maintenance applicative",
+            "phrases": [
+              "refonte applicative",
+              "refonte du site*",
+              "refonte de site*",
+              "refonte des sites",
+              "refonte du portail",
+              "refonte de* l application",
+              "refonte des applications",
+              "refonte du systeme d information",
+              "refonte de* logiciel*",
+              "refonte de* plateforme*",
+              "modernisation applicative",
+              "modernisation de* logiciel*",
+              "modernisation des applications",
+              "evolution* applicative*",
+              "maintenance applicative",
+              "maintenance evolutive",
+              "maintenance corrective",
+              "tierce maintenance applicative",
+              "migration applicative",
+              "reprise d application*",
+              "renouvellement de* logiciel*"
+            ]
+          },
+          {
+            "acronyms": [
+              "GED"
+            ],
+            "id": "digitalisation",
+            "label": "Digitalisation et dématérialisation",
+            "phrases": [
+              "digitalisation",
+              "transformation digitale",
+              "transformation numerique",
+              "dematerialisation",
+              "automatisation des processus",
+              "workflow*",
+              "gestion electronique des documents",
+              "signature* electronique*",
+              "teleservice*",
+              "portail usager*",
+              "portail* numerique*",
+              "parcours utilisateur*",
+              "services numeriques"
+            ]
+          },
+          {
+            "acronyms": [
+              "MDM"
+            ],
+            "id": "gouvernance-donnees",
+            "label": "Gouvernance et qualité des données",
+            "phrases": [
+              "gouvernance des donnees",
+              "gouvernance de la donnee",
+              "data governance",
+              "data steward*",
+              "data owner*",
+              "responsable* de donnees",
+              "referent* data",
+              "gestion des donnees",
+              "data management",
+              "qualite des donnees",
+              "data quality",
+              "referentiel* de donnees",
+              "master data management",
+              "catalogue* de donnees",
+              "catalogue* de metadonnees",
+              "metadonnee*",
+              "dictionnaire* de donnees",
+              "tracabilite des donnees",
+              "data lineage",
+              "cycle de vie de la donnee",
+              "cycle de vie des donnees"
+            ]
+          },
+          {
+            "acronyms": [
+              "ETL",
+              "ELT"
+            ],
+            "id": "plateformes-donnees",
+            "label": "Plateformes et intégration de données",
+            "phrases": [
+              "plateforme* data",
+              "plateforme* de donnees",
+              "architecture* de donnees",
+              "entrepot* de donnees",
+              "data warehouse",
+              "datawarehouse",
+              "data lake*",
+              "datalake*",
+              "lakehouse",
+              "integration de donnees",
+              "migration de donnees",
+              "echange* de donnees",
+              "flux de donnees",
+              "big data",
+              "open data",
+              "conception de* base* de donnees",
+              "administration de* base* de donnees"
+            ]
+          },
+          {
+            "acronyms": [
+              "BI"
+            ],
+            "id": "bi-reporting",
+            "label": "BI, reporting et analyse de données",
+            "phrases": [
+              "informatique decisionnelle",
+              "business intelligence",
+              "outil* de reporting",
+              "solution* de reporting",
+              "solution* decisionnelle*",
+              "datavisualisation",
+              "data visualisation",
+              "dataviz",
+              "visualisation de donnees",
+              "analyse* de donnees",
+              "indicateurs de pilotage"
+            ]
+          },
+          {
+            "acronyms": [
+              "IA",
+              "LLM",
+              "RAG"
+            ],
+            "id": "intelligence-artificielle",
+            "label": "Intelligence artificielle",
+            "phrases": [
+              "intelligence artificielle",
+              "ia generative",
+              "machine learning",
+              "apprentissage automatique",
+              "modele* de langage",
+              "agent* ia",
+              "agent* intelligent*",
+              "traitement automatique du langage",
+              "traitement du langage naturel",
+              "reconnaissance automatique de documents",
+              "automatisation intelligente"
+            ]
+          },
+          {
+            "acronyms": [
+              "AMOA",
+              "AMOE"
+            ],
+            "id": "conseil-si",
+            "label": "Conseil SI, AMOA et pilotage",
+            "phrases": [
+              "conseil en systeme* d information",
+              "conseil informatique",
+              "cadrage de projet* informatique*",
+              "pilotage de projet* informatique*",
+              "gestion de projet* numerique*",
+              "schema directeur informatique",
+              "schema directeur des systemes d information",
+              "schema directeur du systeme d information",
+              "schema directeur numerique",
+              "urbanisation du systeme d information",
+              "urbanisation des systemes d information",
+              "architecture applicative",
+              "audit* des systemes d information",
+              "audit* du systeme d information",
+              "audit informatique"
+            ]
+          },
+          {
+            "acronyms": [],
+            "id": "risques-conformite-outils",
+            "label": "Outils de risques, conformité et audit",
+            "phrases": [
+              "outil* de gestion des risques",
+              "solution* de gestion des risques",
+              "logiciel* de gestion des risques",
+              "outil* de pilotage des risques",
+              "outil* de conformite",
+              "solution* de conformite",
+              "logiciel* de conformite",
+              "outil* d audit",
+              "logiciel* d audit",
+              "outil* de controle interne",
+              "logiciel* de controle interne",
+              "outil* de reporting reglementaire",
+              "solution* de reporting reglementaire"
+            ]
+          }
+        ],
+        "infrastructurePhrases": [
+          "fourniture* de serveur*",
+          "equipement* reseau*",
+          "materiel* informatique*",
+          "stockage informatique",
+          "hebergement seul",
+          "cablage* reseau*",
+          "centre* de donnees",
+          "maintenance materielle",
+          "maintenance des serveurs",
+          "pylone*",
+          "mat* d antenne*",
+          "antenne* relais"
+        ]
+      }
+    },
+    "version": 1
+  },
   "sources": {
     "afd-carrieres": {
-      "lastCount": 38,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastCount": 37,
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "10318": "2026-10-23",
         "10356": "2026-10-27",
@@ -188,8 +1113,8 @@
     },
     "autorite-concurrence-carrieres": {
       "lastCount": 3,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "111582": "2026-10-23",
         "111584": "2026-10-23",
@@ -198,8 +1123,8 @@
     },
     "banque-postale-carrieres": {
       "lastCount": 109,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "1163": "2026-10-23",
         "1395": "2026-10-23",
@@ -315,8 +1240,8 @@
     },
     "boamp": {
       "lastCount": 22,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "26-100642": "2026-10-23",
         "26-101302": "2026-10-23",
@@ -324,6 +1249,7 @@
         "26-101698": "2026-10-23",
         "26-102945": "2026-10-24",
         "26-103027": "2026-10-23",
+        "26-104146": "2026-10-28",
         "26-104207": "2026-10-26",
         "26-104635": "2026-10-27",
         "26-69557": "2026-10-23",
@@ -346,9 +1272,9 @@
       }
     },
     "boamp-tous-acheteurs": {
-      "lastCount": 95,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastCount": 97,
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "26-100354": "2026-10-27",
         "26-100407": "2026-10-27",
@@ -425,7 +1351,9 @@
         "26-103941": "2026-10-27",
         "26-103995": "2026-10-27",
         "26-103998": "2026-10-27",
+        "26-104059": "2026-10-28",
         "26-104102": "2026-10-27",
+        "26-104150": "2026-10-28",
         "26-104265": "2026-10-27",
         "26-104470": "2026-10-27",
         "26-104521": "2026-10-27",
@@ -506,16 +1434,16 @@
     },
     "crh-site": {
       "lastCount": 1,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "https://www.crh-bonds.com/Info/annonce_Gestionnaire_Collat%C3%A9ral.pdf#2025-01-20": "2026-10-23"
       }
     },
     "csp-ape": {
       "lastCount": 6,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "MEF_2026-33002": "2026-10-23",
         "MEF_2026-33005": "2026-10-23",
@@ -530,8 +1458,8 @@
     },
     "csp-asp": {
       "lastCount": 27,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "2026-2388678": "2026-10-23",
         "2026-2411072": "2026-10-23",
@@ -570,13 +1498,13 @@
     },
     "csp-autorite-concurrence": {
       "lastCount": 0,
-      "lastSuccessOn": "2026-10-27",
+      "lastSuccessOn": "2026-10-28",
       "seen": {}
     },
     "csp-cour-des-comptes": {
-      "lastCount": 30,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastCount": 31,
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "2026-2332385": "2026-10-23",
         "2026-2344378": "2026-10-23",
@@ -608,13 +1536,14 @@
         "2026-2445184": "2026-10-23",
         "2026-2445237": "2026-10-23",
         "2026-2445295": "2026-10-23",
-        "2026-2449438": "2026-10-23"
+        "2026-2449438": "2026-10-23",
+        "2026-2452824": "2026-10-28"
       }
     },
     "csp-dgfip": {
-      "lastCount": 316,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastCount": 325,
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "2026-2418338": "2026-10-23",
         "2026-2419709": "2026-10-23",
@@ -743,6 +1672,7 @@
         "MEF_2026-32584": "2026-10-23",
         "MEF_2026-32585": "2026-10-23",
         "MEF_2026-32588": "2026-10-23",
+        "MEF_2026-32607": "2026-10-28",
         "MEF_2026-32608": "2026-10-23",
         "MEF_2026-32620": "2026-10-23",
         "MEF_2026-32625": "2026-10-23",
@@ -857,6 +1787,7 @@
         "MEF_2026-33097": "2026-10-23",
         "MEF_2026-33098": "2026-10-23",
         "MEF_2026-33100": "2026-10-23",
+        "MEF_2026-33101": "2026-10-28",
         "MEF_2026-33107": "2026-10-23",
         "MEF_2026-33113": "2026-10-23",
         "MEF_2026-33117": "2026-10-23",
@@ -967,6 +1898,7 @@
         "MEF_2026-33418": "2026-10-23",
         "MEF_2026-33428": "2026-10-23",
         "MEF_2026-33431": "2026-10-23",
+        "MEF_2026-33432": "2026-10-28",
         "MEF_2026-33433": "2026-10-24",
         "MEF_2026-33436": "2026-10-23",
         "MEF_2026-33438": "2026-10-27",
@@ -974,18 +1906,22 @@
         "MEF_2026-33451": "2026-10-24",
         "MEF_2026-33455": "2026-10-24",
         "MEF_2026-33471": "2026-10-27",
+        "MEF_2026-33478": "2026-10-28",
         "MEF_2026-33481": "2026-10-27",
         "MEF_2026-33484": "2026-10-27",
         "MEF_2026-33488": "2026-10-27",
         "MEF_2026-33497": "2026-10-27",
         "MEF_2026-33499": "2026-10-27",
-        "MEF_2026-33500": "2026-10-27"
+        "MEF_2026-33500": "2026-10-27",
+        "MEF_2026-33509": "2026-10-28",
+        "MEF_2026-33514": "2026-10-28",
+        "MEF_2026-33521": "2026-10-28"
       }
     },
     "csp-dinum": {
       "lastCount": 13,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "2026-2290050": "2026-10-23",
         "2026-2430553": "2026-10-23",
@@ -1004,8 +1940,8 @@
     },
     "csp-insee": {
       "lastCount": 20,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "2026-2264917": "2026-10-23",
         "2026-2264943": "2026-10-23",
@@ -1032,8 +1968,8 @@
     },
     "expertise-france-carrieres": {
       "lastCount": 200,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "14863": "2026-10-23",
         "14905": "2026-10-23",
@@ -1242,6 +2178,7 @@
         "16518": "2026-10-25",
         "16519": "2026-10-26",
         "16520": "2026-10-26",
+        "16521": "2026-10-28",
         "16522": "2026-10-26",
         "16523": "2026-10-26",
         "16525": "2026-10-27",
@@ -1263,13 +2200,15 @@
         "16542": "2026-10-27",
         "16543": "2026-10-27",
         "16544": "2026-10-27",
-        "16545": "2026-10-27"
+        "16545": "2026-10-27",
+        "16548": "2026-10-28",
+        "16549": "2026-10-28"
       }
     },
     "sfil-carrieres": {
-      "lastCount": 6,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastCount": 5,
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "https://sfil.fr/offres-emploi/cdi-architecte-concepteur-ia-f-h/": "2026-10-23",
         "https://sfil.fr/offres-emploi/cdi-chef-de-projet-maitrise-douvrage-secteur-public-local-et-operations-de-credits-f-h/": "2026-10-23",
@@ -1280,9 +2219,9 @@
       }
     },
     "ted": {
-      "lastCount": 21,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastCount": 24,
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "485177-2026": "2026-10-23",
         "546656-2026": "2026-10-23",
@@ -1307,13 +2246,16 @@
         "722646-2026": "2026-10-23",
         "722662-2026": "2026-10-23",
         "726062-2026": "2026-10-23",
-        "727328-2026": "2026-10-23"
+        "727328-2026": "2026-10-23",
+        "745674-2026": "2026-10-28",
+        "747462-2026": "2026-10-28",
+        "748015-2026": "2026-10-28"
       }
     },
     "ted-tous-acheteurs": {
-      "lastCount": 39,
-      "lastNonEmptyOn": "2026-10-27",
-      "lastSuccessOn": "2026-10-27",
+      "lastCount": 40,
+      "lastNonEmptyOn": "2026-10-28",
+      "lastSuccessOn": "2026-10-28",
       "seen": {
         "492002-2026": "2026-10-27",
         "550007-2026": "2026-10-27",
@@ -1432,7 +2374,8 @@
         "743811-2026": "2026-10-27",
         "744132-2026": "2026-10-27",
         "744563-2026": "2026-10-27",
-        "745127-2026": "2026-10-27"
+        "745127-2026": "2026-10-27",
+        "746837-2026": "2026-10-28"
       }
     }
   },
