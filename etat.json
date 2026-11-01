@@ -104,6 +104,7 @@
     "cba6a2ff-e0ba-4eec-bb1a-77b9b2d4eda4": "2026-10-23",
     "cd38f7c5-3df7-4eed-af5e-f0f1beb55c30": "2026-10-23",
     "d1dbdac3-fb54-4c2c-92f2-8355bae6a8e5": "2026-10-27",
+    "d1ee5000-4fc7-4907-90eb-b8c5f70d9fbc": "2026-11-01",
     "d46c9856-06bc-4ae5-9a4e-00b300c246db": "2026-10-27",
     "d4e32260-4420-42a0-9401-b00bce38beaa": "2026-10-23",
     "d5e0a8d6-bf72-41dd-b44e-77fea0aeeb40": "2026-10-27",
@@ -1295,7 +1296,7 @@
       }
     },
     "boamp-tous-acheteurs": {
-      "lastCount": 96,
+      "lastCount": 98,
       "lastNonEmptyOn": "2026-11-01",
       "lastSuccessOn": "2026-11-01",
       "seen": {
@@ -1388,6 +1389,8 @@
         "26-105289": "2026-10-30",
         "26-105346": "2026-10-29",
         "26-105467": "2026-10-31",
+        "26-105857": "2026-11-01",
+        "26-105860": "2026-11-01",
         "26-63904": "2026-10-27",
         "26-66028": "2026-10-27",
         "26-68689": "2026-10-27",
@@ -2299,7 +2302,7 @@
     },
     "sfil-carrieres": {
       "lastCount": 5,
-      "lastNonEmptyOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
       "lastSuccessOn": "2026-11-01",
       "seen": {
         "https://sfil.fr/offres-emploi/cdi-architecte-concepteur-ia-f-h/": "2026-10-23",
