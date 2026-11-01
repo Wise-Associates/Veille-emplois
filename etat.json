@@ -1064,9 +1064,9 @@
   },
   "sources": {
     "afd-carrieres": {
-      "lastCount": 31,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastCount": 29,
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "10318": "2026-10-23",
         "10356": "2026-10-27",
@@ -1120,8 +1120,8 @@
     },
     "autorite-concurrence-carrieres": {
       "lastCount": 3,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "111582": "2026-10-23",
         "111584": "2026-10-23",
@@ -1130,8 +1130,8 @@
     },
     "banque-postale-carrieres": {
       "lastCount": 117,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "1163": "2026-10-23",
         "1395": "2026-10-23",
@@ -1260,8 +1260,8 @@
     },
     "boamp": {
       "lastCount": 19,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "26-100642": "2026-10-23",
         "26-101302": "2026-10-23",
@@ -1274,6 +1274,7 @@
         "26-104635": "2026-10-27",
         "26-104807": "2026-10-29",
         "26-105624": "2026-10-30",
+        "26-105691": "2026-11-01",
         "26-69557": "2026-10-23",
         "26-77919": "2026-10-23",
         "26-89726": "2026-10-23",
@@ -1295,8 +1296,8 @@
     },
     "boamp-tous-acheteurs": {
       "lastCount": 96,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "26-100354": "2026-10-27",
         "26-100407": "2026-10-27",
@@ -1462,16 +1463,16 @@
     },
     "crh-site": {
       "lastCount": 1,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "https://www.crh-bonds.com/Info/annonce_Gestionnaire_Collat%C3%A9ral.pdf#2025-01-20": "2026-10-23"
       }
     },
     "csp-ape": {
       "lastCount": 6,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "MEF_2026-33002": "2026-10-23",
         "MEF_2026-33005": "2026-10-23",
@@ -1485,9 +1486,9 @@
       }
     },
     "csp-asp": {
-      "lastCount": 30,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastCount": 27,
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "2026-2388678": "2026-10-23",
         "2026-2411072": "2026-10-23",
@@ -1530,13 +1531,13 @@
     },
     "csp-autorite-concurrence": {
       "lastCount": 0,
-      "lastSuccessOn": "2026-10-31",
+      "lastSuccessOn": "2026-11-01",
       "seen": {}
     },
     "csp-cour-des-comptes": {
       "lastCount": 32,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "2026-2332385": "2026-10-23",
         "2026-2344378": "2026-10-23",
@@ -1574,9 +1575,9 @@
       }
     },
     "csp-dgfip": {
-      "lastCount": 310,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastCount": 311,
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "2026-2418338": "2026-10-23",
         "2026-2419709": "2026-10-23",
@@ -1678,6 +1679,7 @@
         "MEF_2026-32123": "2026-10-23",
         "MEF_2026-32124": "2026-10-23",
         "MEF_2026-32131": "2026-10-23",
+        "MEF_2026-32135": "2026-11-01",
         "MEF_2026-32143": "2026-10-23",
         "MEF_2026-32158": "2026-10-23",
         "MEF_2026-32159": "2026-10-23",
@@ -1973,13 +1975,17 @@
         "MEF_2026-33538": "2026-10-30",
         "MEF_2026-33541": "2026-10-30",
         "MEF_2026-33545": "2026-10-30",
-        "MEF_2026-33562": "2026-10-30"
+        "MEF_2026-33562": "2026-10-30",
+        "MEF_2026-33567": "2026-11-01",
+        "MEF_2026-33583": "2026-11-01",
+        "MEF_2026-33589": "2026-11-01",
+        "MEF_2026-33592": "2026-11-01"
       }
     },
     "csp-dinum": {
       "lastCount": 12,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "2026-2290050": "2026-10-23",
         "2026-2430553": "2026-10-23",
@@ -1999,8 +2005,8 @@
     },
     "csp-insee": {
       "lastCount": 17,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "2026-2264917": "2026-10-23",
         "2026-2264943": "2026-10-23",
@@ -2027,8 +2033,8 @@
     },
     "expertise-france-carrieres": {
       "lastCount": 200,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "14863": "2026-10-23",
         "14905": "2026-10-23",
@@ -2294,7 +2300,7 @@
     "sfil-carrieres": {
       "lastCount": 5,
       "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "https://sfil.fr/offres-emploi/cdi-architecte-concepteur-ia-f-h/": "2026-10-23",
         "https://sfil.fr/offres-emploi/cdi-chef-de-projet-maitrise-douvrage-secteur-public-local-et-operations-de-credits-f-h/": "2026-10-23",
@@ -2305,9 +2311,9 @@
       }
     },
     "ted": {
-      "lastCount": 22,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastCount": 21,
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "485177-2026": "2026-10-23",
         "546656-2026": "2026-10-23",
@@ -2342,8 +2348,8 @@
     },
     "ted-tous-acheteurs": {
       "lastCount": 36,
-      "lastNonEmptyOn": "2026-10-31",
-      "lastSuccessOn": "2026-10-31",
+      "lastNonEmptyOn": "2026-11-01",
+      "lastSuccessOn": "2026-11-01",
       "seen": {
         "492002-2026": "2026-10-27",
         "550007-2026": "2026-10-27",
