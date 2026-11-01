@@ -153,10 +153,65 @@ jobs:
             commit --quiet -m "État de la veille du $(date -u +%F)"
           git push origin "HEAD:refs/heads/$STATE_BRANCH"
 
+  # MyBestConsultant lit la boîte AO juste après l'envoi des offres (ADR 0008), sans attendre son propre passage
+  # planifié (une fois par jour, limite du plan Hobby de Vercel). Job à part qui n'exécute que curl, ni le code du
+  # projet ni npm : le secret de MyBestConsultant (son CRON_SECRET) n'est donné à aucune dépendance.
+  synchroniser:
+    needs: passage
+    # Seulement après un vrai passage (pas un essai), même si un envoi a échoué (code 3) : des offres sont parties.
+    if: ${{ !cancelled() && needs.passage.outputs.etat-enregistre == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    steps:
+      - name: Lire la boîte AO dans MyBestConsultant
+        env:
+          AO_SYNC_URL: ${{ secrets.AO_SYNC_URL }}
+          AO_SYNC_TOKEN: ${{ secrets.AO_SYNC_TOKEN }}
+        run: |
+          if [ -z "$AO_SYNC_URL" ] || [ -z "$AO_SYNC_TOKEN" ]; then
+            echo "::notice::AO_SYNC_URL ou AO_SYNC_TOKEN non défini : la boîte AO sera lue au prochain passage de MyBestConsultant."
+            exit 0
+          fi
+          # Laisse aux derniers e-mails acceptés par le serveur d'envoi le temps d'arriver dans la boîte.
+          sleep 30
+          # Un appel lit au plus 25 e-mails en 4 minutes (la route s'arrête à 5) : on rappelle tant qu'il en reste,
+          # pendant 15 minutes au plus ; le reste est lu au passage suivant (ou par le passage quotidien de Vercel).
+          deadline=$((SECONDS + 15 * 60))
+          report="$RUNNER_TEMP/ao-sync.json"
+          while [ $((deadline - SECONDS)) -ge 330 ]; do
+            code=$(curl --silent --show-error --max-time 320 --output "$report" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $AO_SYNC_TOKEN" "$AO_SYNC_URL") \
+              || { echo "::error::MyBestConsultant injoignable (curl, code $?)"; exit 1; }
+            if [ "$code" != "200" ]; then
+              # Seul le message générique est affiché : le détail (boîtes, adresses) est dans les journaux de Vercel.
+              echo "::error::Lecture de la boîte AO refusée par MyBestConsultant (HTTP $code) : $(jq -r '.error // "réponse illisible"' "$report" 2>/dev/null || echo 'réponse illisible')"
+              exit 1
+            fi
+            if ! jq -e '(.processed | type) == "number" and (.remaining | type) == "number"' "$report" > /dev/null 2>&1; then
+              echo "::error::Réponse de MyBestConsultant illisible (compte rendu attendu)."
+              exit 1
+            fi
+            if [ "$(jq -r '.skipped' "$report")" = "true" ]; then
+              echo "Une autre lecture de la boîte est en cours : nouvel essai dans 30 s."
+              sleep 30
+              continue
+            fi
+            jq -r '"\(.processed) e-mail(s) traité(s), \(.offersCreated) offre(s) créée(s), \(.remaining) en attente."' "$report"
+            if [ "$(jq -r '.aiUnavailable' "$report")" = "true" ]; then
+              echo "::warning::IA de MyBestConsultant indisponible (crédits ou clé) : les e-mails attendent, voir Config IA."
+              exit 0
+            fi
+            # Tout est lu, ou rien n'a avancé (e-mails en erreur) : inutile de rappeler.
+            if [ "$(jq -r '.remaining' "$report")" = "0" ] || [ "$(jq -r '.processed' "$report")" = "0" ]; then exit 0; fi
+          done
+          echo "Limite de 15 minutes atteinte : la suite sera lue au passage suivant."
+
   # Un échec planifié n'est signalé par GitHub qu'à la personne qui a modifié le cron en dernier : un ticket prévient
   # toutes les personnes qui suivent le dépôt. Un seul ticket ouvert à la fois, complété à chaque nouvel échec.
+  # La lecture de la boîte AO par MyBestConsultant (job « synchroniser ») qui échoue l'ouvre aussi.
   alerte:
-    needs: [passage, enregistrer]
+    needs: [passage, enregistrer, synchroniser]
     # Un job tué par son délai maximal est « annulé », pas « en échec » : les deux cas ouvrent le ticket.
     if: ${{ failure() || contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest

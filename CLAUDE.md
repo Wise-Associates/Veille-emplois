@@ -53,8 +53,11 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
   (`src/it-scope.ts`) ou de la reconnaissance d'acheteur (`src/tenders/buyer-match.ts`) s'accompagne d'un cas dans
   leur `*.spec.ts` (y compris le faux positif ou l'homonyme à écarter) et d'une vérification sur les offres réelles
   (`npm run veille:essai`). Une offre écartée est retenue comme vue : élargir ne la renverra pas.
-- Le workflow `veille-quotidienne.yml` n'utilise que des secrets (dont `VEILLE_CONFIG_URL` et `VEILLE_CONFIG_TOKEN`),
+- Le workflow `veille-quotidienne.yml` n'utilise que des secrets (dont `VEILLE_CONFIG_URL`, `VEILLE_CONFIG_TOKEN`,
+  `AO_SYNC_URL` et `AO_SYNC_TOKEN`),
   la variable `MAX_OFFER_EMAILS_PER_RUN`, l'entrée booléenne `essai` et `DIGEST_MODE` (calculé d'après l'horaire du
   passage), tous passés par `env:` (jamais `${{ }}` dans un script). Changer l'horaire de 5 h oblige à changer aussi l'expression de `DIGEST_MODE`.
   Le job qui exécute le code (`passage`) garde un jeton en lecture seule ; seul `enregistrer`, qui n'exécute que git,
-  peut écrire. Actions épinglées par SHA (version en commentaire).
+  peut écrire. `AO_SYNC_TOKEN` (le `CRON_SECRET` de MyBestConsultant) n'est donné qu'au job `synchroniser`, qui
+  n'exécute que curl (ADR 0008) : jamais au job `passage`, dont les dépendances npm le liraient. Actions épinglées
+  par SHA (version en commentaire).

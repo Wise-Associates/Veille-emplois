@@ -45,6 +45,10 @@ mots-clés (SaaS, digitalisation, données, IA, TMA…, voir « Périmètre info
 9. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`) : offres envoyées, offres en attente, points à
    vérifier. Le passage de 5 h l'envoie **toujours, même sans nouveauté** (son arrivée prouve que la veille tourne) ;
    ceux de 9 h, 13 h et 17 h seulement s'il y a un point à vérifier (`DIGEST_MODE`).
+10. **MyBestConsultant lit aussitôt la boîte AO** (job `synchroniser`,
+    [docs/adr/0008-lecture-de-la-boite-ao-apres-chaque-passage.md](docs/adr/0008-lecture-de-la-boite-ao-apres-chaque-passage.md)) :
+    le workflow appelle sa route `/api/cron/ao-inbox`, et la rappelle tant qu'il reste des e-mails, pendant 15 minutes
+    au plus. Les offres envoyées y apparaissent sans attendre son passage quotidien.
 
 Le récapitulatif signale en tête les **points à vérifier** :
 
@@ -185,8 +189,11 @@ toute lecture (le message nomme la variable, jamais sa valeur).
 1. Pousser ce dépôt sur GitHub (dépôt privé de l'organisation).
 2. Dans **Settings → Secrets and variables → Actions**, créer les secrets `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
    `SMTP_PASSWORD`, `MAIL_FROM`, `OFFERS_TO`, `MAIL_TO`, `VEILLE_CONFIG_URL` (`https://<site de production de
-   MyBestConsultant>/api/veille/config`) et `VEILLE_CONFIG_TOKEN` (même valeur que dans MyBestConsultant) ;
-   facultatif, la variable (onglet « Variables ») `MAX_OFFER_EMAILS_PER_RUN`.
+   MyBestConsultant>/api/veille/config`) et `VEILLE_CONFIG_TOKEN` (même valeur que dans MyBestConsultant),
+   `AO_SYNC_URL` (`https://<site de production de MyBestConsultant>/api/cron/ao-inbox`) et `AO_SYNC_TOKEN` (le
+   `CRON_SECRET` de production de MyBestConsultant : à changer ici chaque fois qu'il change dans Vercel) ; facultatif,
+   la variable (onglet « Variables ») `MAX_OFFER_EMAILS_PER_RUN`. Sans `AO_SYNC_URL` / `AO_SYNC_TOKEN`, la boîte AO
+   n'est lue que par le passage quotidien de MyBestConsultant.
 3. Laisser les permissions par défaut des workflows en lecture seule (**Settings → Actions → General**) : chaque job
    déclare lui-même ce dont il a besoin. Ne pas protéger la branche `veille-etat` contre `github-actions[bot]`.
 4. Onglet **Actions → Veille quotidienne → Run workflow** : d'abord avec « Essai » coché (récapitulatif et premier
@@ -194,10 +201,14 @@ toute lecture (le message nomme la variable, jamais sa valeur).
    200 premières offres ; relancer le workflow pour envoyer les suivantes plus tôt.
 5. Recommandé : protéger la branche `main` (pull request obligatoire) dans **Settings → Rules**.
 
-Le workflow a trois jobs : `passage` exécute la veille avec un jeton **en lecture seule** ; `enregistrer`, qui
-n'exécute que git, pousse l'état sur `veille-etat` ; `alerte` ouvre (ou complète) le ticket « Échec de la veille
-quotidienne » si un passage échoue : toutes les personnes qui suivent le dépôt sont prévenues, et le ticket renvoie au
-journal de l'exécution. Le fermer une fois corrigé.
+Le workflow a quatre jobs :
+- `passage` exécute la veille avec un jeton **en lecture seule** ;
+- `enregistrer`, qui n'exécute que git, pousse l'état sur `veille-etat` ;
+- `synchroniser`, qui n'exécute que curl, fait lire la boîte AO par MyBestConsultant (ADR 0008). Il est le seul à
+  recevoir `AO_SYNC_TOKEN` ;
+- `alerte` ouvre (ou complète) le ticket « Échec de la veille quotidienne » si un passage échoue, ou si
+  MyBestConsultant refuse ou ne répond pas. Toutes les personnes qui suivent le dépôt sont prévenues, et le ticket
+  renvoie au journal de l'exécution. Le fermer une fois corrigé.
 
 Codes de sortie du programme : 0, passage complet ; 1, passage interrompu avant l'enregistrement de l'état ; 3, état
 enregistré mais un envoi a échoué (offres ou récapitulatif). Avec le code 3, le workflow pousse quand même l'état,
