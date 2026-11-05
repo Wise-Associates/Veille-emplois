@@ -57,6 +57,23 @@ describe('e-mail d\'une offre (boîte AO)', () => {
     assert.match(email.text, /^Offre en ligne : lien indisponible$/m)
   })
 
+  it('joint l\'avis officiel en PDF et donne le lien du dossier de consultation de l\'acheteur', () => {
+    const tender: Listing = { ...job, kind: 'tender', organisationId: 'insee', documentsUrl: 'https://dce.exemple.test/consultation?id=1&lot=2' }
+    const pdf = { filename: 'avis-2026-0000001.pdf', content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }
+    const email = renderOfferEmail(tender, undefined, [pdf])
+    assert.match(email.text, /^Avis officiel \(PDF\) : joint à cet e-mail \(avis-2026-0000001\.pdf\)$/m)
+    assert.match(email.text, /^Dossier de consultation : https:\/\/dce\.exemple\.test\/consultation\?id=1&lot=2$/m)
+    assert.ok(email.html.includes('<a href="https://dce.exemple.test/consultation?id=1&amp;lot=2">'))
+    assert.deepEqual(email.attachments, [pdf])
+  })
+
+  it('n\'annonce ni pièce jointe ni dossier de consultation qu\'elle n\'a pas, et refuse un lien de dossier non web', () => {
+    const email = renderOfferEmail({ ...job, kind: 'tender', organisationId: 'insee', documentsUrl: 'javascript:alert(1)' })
+    assert.doesNotMatch(email.text, /Avis officiel \(PDF\)|Dossier de consultation/)
+    assert.ok(!email.html.includes('javascript:'))
+    assert.equal(email.attachments, undefined)
+  })
+
   it('limite la longueur du sujet', () => {
     assert.ok(renderOfferEmail({ ...job, title: 'T'.repeat(300) }).subject.length <= 180)
   })

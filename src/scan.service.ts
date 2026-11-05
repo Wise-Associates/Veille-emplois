@@ -3,8 +3,10 @@ import { CLOCK, type Clock } from './clock.js'
 import { APP_CONFIG, type AppConfig } from './config.js'
 import { parisDay } from './dates.js'
 import { needsAttention, renderDigest, type DeliverySummary } from './digest/digest.js'
+import type { EmailAttachment, RenderedEmail } from './digest/format.js'
 import { renderOfferEmail } from './digest/offer-email.js'
 import { itRulesFrom, scopeToIt, type ItRules } from './it-scope.js'
+import { isSiteUnavailable } from './http/http-client.js'
 import type { Listing, ListingDetails, ListingSource } from './listing.js'
 import { isMessageRejection, Mailer } from './mail/mailer.js'
 import { organisationsFrom, type Organisation } from './organisations.js'
@@ -20,6 +22,7 @@ import {
   type VeilleState,
 } from './state/run-state.js'
 import { StateStore } from './state/state-store.js'
+import { NoticePdfReader } from './tenders/notice-pdf.js'
 
 /**
  * Passage terminé avec l'état enregistré, mais un envoi a échoué (offres ou récapitulatif) : le workflow doit
@@ -61,6 +64,7 @@ export class ScanService {
     private readonly settingsLoader: SettingsLoader,
     private readonly store: StateStore,
     private readonly mailer: Mailer,
+    private readonly noticePdfs: NoticePdfReader,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
@@ -95,9 +99,11 @@ export class ScanService {
     const run: RunContext = { sources, organisations, settingsWarnings }
     if (this.config.dryRun) return this.preview(batch, report, today, outOfScope, run)
 
-    const details = new DetailReader()
+    const details = new DetailReader(PAGE_FAILURES)
+    const pdfs = new DetailReader(PDF_FAILURES)
     const sent: NewListing[] = []
     const refused: string[] = []
+    const sentWithoutPdf: string[] = []
     const outdated: NewListing[] = []
     let deliveryError: string | null = null
     for (const listing of batch) {
@@ -114,8 +120,19 @@ export class ScanService {
         outdated.push(listing)
         continue
       }
+      // Avis officiel en PDF, téléchargé seulement pour une offre qui part (pas pour une offre échue).
+      const attachments = await this.attachNoticePdf(listing, pdfs, sources)
       try {
-        await this.mailer.sendOffer(renderOfferEmail(complete, organisations))
+        try {
+          await this.mailer.sendOffer(renderOfferEmail(complete, organisations, attachments))
+        } catch (error) {
+          // Message refusé pour lui-même alors qu'il portait l'avis PDF (taille, filtre du serveur) : renvoyé aussitôt
+          // sans lui, sinon l'offre repartirait chaque passage avec le même PDF et serait refusée chaque fois.
+          if (!attachments.length || !isMessageRejection(error)) throw error
+          this.logger.warn(`Offre ${listing.id} refusée avec son avis PDF, renvoyée sans lui : ${message(error)}`)
+          await this.mailer.sendOffer(renderOfferEmail(complete, organisations))
+          sentWithoutPdf.push(`« ${listing.title.slice(0, 80)} » (${listing.organisationId}, ${listing.id}) : ${message(error)}`)
+        }
       } catch (error) {
         if (isMessageRejection(error)) {
           // Refus propre à ce message : les suivants partent quand même ; celui-ci sera retenté au passage suivant.
@@ -154,6 +171,8 @@ export class ScanService {
         ...settingsWarnings,
         ...report.warnings,
         ...details.warnings(),
+        ...pdfs.warnings(),
+        ...sentWithoutPdf.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Avis PDF refusé avec le message, offre envoyée sans lui : ${offer}` })),
         ...refused.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Offre refusée, retentée au prochain passage : ${offer}` })),
       ],
     }
@@ -199,10 +218,22 @@ export class ScanService {
       warnings: [...run.settingsWarnings, ...report.warnings],
     }
     const digest = renderDigest(summary, today, run.organisations)
-    const first = batch[0] ? renderOfferEmail(await this.complete(batch[0], new DetailReader(), run.sources), run.organisations) : null
+    let first: RenderedEmail | null = null
+    if (batch[0]) {
+      const complete = await this.complete(batch[0], new DetailReader(PAGE_FAILURES), run.sources)
+      // Comme dans un vrai passage, pas de téléchargement pour une offre échue (elle ne partirait pas).
+      const outdated = complete.deadline !== undefined && complete.deadline.slice(0, 10) < today
+      const attachments = outdated ? [] : await this.attachNoticePdf(batch[0], new DetailReader(PDF_FAILURES), run.sources)
+      first = renderOfferEmail(complete, run.organisations, attachments)
+    }
+    // Pièces jointes : nom et taille seulement (le contenu d'un avis nomme le contact de l'acheteur).
+    const attached = first?.attachments?.map((a) => `${a.filename} (${Math.ceil(a.content.byteLength / 1024)} Ko)`).join(', ')
     this.logger.log(
       `Essai : rien n'est envoyé ni enregistré.\n\n=== Récapitulatif (équipe) ===\n${digest.subject}\n\n${digest.text}` +
-        (first ? `\n\n=== Premier des ${batch.length} e-mails d'offre (boîte AO) ===\n${first.subject}\n\n${first.text}` : ''),
+        (first
+          ? `\n\n=== Premier des ${batch.length} e-mails d'offre (boîte AO) ===\n${first.subject}\n` +
+            `Pièce(s) jointe(s) : ${attached ?? 'aucune'}\n\n${first.text}`
+          : ''),
     )
     return summary
   }
@@ -224,6 +255,30 @@ export class ScanService {
       this.logger.warn(`${source.label} : détail de l'offre ${listing.id} illisible — ${message(error)}`)
       details.failed(source.label)
       return listing
+    }
+  }
+
+  /**
+   * Avis officiel en PDF de l'offre, si sa source en donne l'adresse (BOAMP, TED). Un échec n'empêche pas l'envoi : l'offre
+   * part sans lui (son e-mail garde le lien de l'avis), et c'est signalé dans le récapitulatif.
+   */
+  private async attachNoticePdf(listing: NewListing, pdfs: DetailReader, sources: readonly ListingSource[]): Promise<EmailAttachment[]> {
+    if (!listing.noticePdfUrl) return []
+    const label = sources.find((s) => s.id === listing.sourceId)?.label ?? listing.sourceId
+    if (pdfs.abandoned(label)) {
+      pdfs.failed(label)
+      return []
+    }
+    try {
+      const pdf = await this.noticePdfs.read(listing.noticePdfUrl, listing.id)
+      pdfs.succeeded(label)
+      return [pdf]
+    } catch (error) {
+      this.logger.warn(`${label} : avis PDF de l'offre ${listing.id} non joint — ${message(error)}`)
+      // Un avis introuvable (404) ou un fichier refusé ne concerne que cet avis : seul un site injoignable ou en panne
+      // fait cesser les téléchargements de la source pour ce passage.
+      pdfs.failed(label, isSiteUnavailable(error))
+      return []
     }
   }
 
@@ -252,13 +307,27 @@ export class ScanService {
   }
 }
 
+/** Message du récapitulatif pour les offres d'une source envoyées sans un complément (`abandoned` : lecture arrêtée). */
+type FailureMessage = (failed: number, abandoned: boolean) => string
+
+const PAGE_FAILURES: FailureMessage = (failed, abandoned) =>
+  `${failed} offre(s) envoyée(s) sans le détail de leur page (lecture impossible` +
+  `${abandoned ? `, abandonnée après ${MAX_CONSECUTIVE_PAGE_FAILURES} échecs de suite` : ''}) : la page a peut-être changé.`
+
+const PDF_FAILURES: FailureMessage = (failed, abandoned) =>
+  `${failed} offre(s) envoyée(s) sans l'avis officiel en PDF (téléchargement impossible` +
+  `${abandoned ? `, abandonné après ${MAX_CONSECUTIVE_PAGE_FAILURES} échecs de suite` : ''}) : l'adresse des avis a peut-être ` +
+  `changé ; le lien de l'avis officiel figure dans chaque e-mail.`
+
 /**
- * Suivi des lectures de pages d'offres pendant l'envoi, par source. Après quelques échecs de suite (site en panne ou
- * page modifiée), la source n'est plus lue pendant ce passage : ses offres partent sans le détail, sans attendre
- * chaque fois la fin du délai.
+ * Suivi des lectures faites pendant l'envoi (pages d'offres, avis PDF), par source. Après quelques échecs de suite (site
+ * en panne ou modifié), la source n'est plus lue pendant ce passage : ses offres partent sans ce complément, sans
+ * attendre chaque fois la fin du délai.
  */
 class DetailReader {
   private readonly bySource = new Map<string, { failed: number; consecutive: number }>()
+
+  constructor(private readonly failureMessage: FailureMessage) {}
 
   abandoned(label: string): boolean {
     return (this.bySource.get(label)?.consecutive ?? 0) >= MAX_CONSECUTIVE_PAGE_FAILURES
@@ -269,22 +338,17 @@ class DetailReader {
     if (entry) entry.consecutive = 0
   }
 
-  failed(label: string): void {
+  /** `siteUnavailable` : faux pour un échec propre à une offre (le site a répondu), qui ne rapproche pas de l'abandon. */
+  failed(label: string, siteUnavailable = true): void {
     const entry = this.bySource.get(label) ?? { failed: 0, consecutive: 0 }
     entry.failed++
-    entry.consecutive++
+    entry.consecutive = siteUnavailable ? entry.consecutive + 1 : 0
     this.bySource.set(label, entry)
   }
 
   warnings(): { label: string; message: string }[] {
     return [...this.bySource]
       .filter(([, entry]) => entry.failed > 0)
-      .map(([label, entry]) => ({
-        label,
-        message:
-          `${entry.failed} offre(s) envoyée(s) sans le détail de leur page (lecture impossible` +
-          `${entry.consecutive >= MAX_CONSECUTIVE_PAGE_FAILURES ? `, abandonnée après ${MAX_CONSECUTIVE_PAGE_FAILURES} échecs de suite` : ''}) : ` +
-          'la page a peut-être changé.',
-      }))
+      .map(([label, entry]) => ({ label, message: this.failureMessage(entry.failed, entry.consecutive >= MAX_CONSECUTIVE_PAGE_FAILURES) }))
   }
 }

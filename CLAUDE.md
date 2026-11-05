@@ -17,7 +17,13 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
 - Identifiants de code en anglais, commentaires, messages, journaux et e-mail en français.
 - **Données fictives uniquement** dans les tests et aperçus (titres, identifiants, noms).
 - Les avis de marché contiennent des **contacts nominatifs** : ne lire que le nom et le SIRET de l'acheteur, ne jamais
-  les journaliser ni les envoyer.
+  les journaliser ni les écrire dans un e-mail. Seule exception (ADR 0009, accord de l'utilisateur) : l'avis officiel en
+  PDF, joint tel quel à l'e-mail de la boîte AO, sans que son contenu soit lu ni journalisé.
+- **Avis officiel en PDF** (ADR 0009, `src/tenders/notice-pdf.ts`) : téléchargé seulement depuis `www.boamp.fr` et
+  `ted.europa.eu` (https, redirections comprises), à une adresse construite à partir de l'identifiant de l'avis ; un
+  échec n'empêche pas l'envoi (signalé), et un message refusé avec son PDF est renvoyé aussitôt sans lui. Le dossier de
+  consultation (DCE) des plateformes d'acheteurs n'est **jamais téléchargé** (connexion, conditions d'usage) : seul son
+  lien est donné dans l'e-mail, filtré par `webUrl` (lien saisi par un tiers).
 - **Respecter les conditions d'usage des sites** (ADR 0001) : API et flux officiels d'abord ; pages publiques
   seulement si robots.txt les autorise ; User-Agent `veille-marches-emplois` ; jamais se faire passer pour un
   navigateur, contourner un blocage ou lire PLACE / lasecurecrute.fr (interdits sans autorisation écrite).

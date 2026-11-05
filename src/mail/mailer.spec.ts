@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { explainSmtpError, isMessageRejection } from './mailer.js'
+import { explainSmtpError, isMessageRejection, messageContent } from './mailer.js'
 
 // Erreurs construites comme celles de nodemailer (code, command, responseCode), réponses de serveur fictives.
 const smtpError = (fields: Record<string, unknown>, message: string) => Object.assign(new Error(message), fields)
@@ -40,5 +40,18 @@ describe('erreurs d\'envoi SMTP', () => {
   it('laisse les autres erreurs telles quelles', () => {
     const timeout = smtpError({ code: 'ETIMEDOUT' }, 'Connection timeout')
     assert.equal(explainSmtpError(timeout), timeout)
+  })
+})
+
+describe('contenu d\'un message', () => {
+  it('joint les pièces jointes de l\'e-mail (avis officiel en PDF)', () => {
+    const content = new TextEncoder().encode('%PDF-1.6')
+    const message = messageContent({ subject: 'Objet fictif', text: 'Texte', html: '<p>Texte</p>', attachments: [{ filename: 'avis-26-000001.pdf', content, contentType: 'application/pdf' }] })
+    assert.equal(message.subject, 'Objet fictif')
+    assert.equal(message.attachments?.length, 1)
+    assert.equal(message.attachments?.[0]?.filename, 'avis-26-000001.pdf')
+    assert.equal(message.attachments?.[0]?.contentType, 'application/pdf')
+    assert.ok(Buffer.isBuffer(message.attachments?.[0]?.content))
+    assert.equal(messageContent({ subject: 'Récapitulatif', text: '', html: '' }).attachments, undefined)
   })
 })

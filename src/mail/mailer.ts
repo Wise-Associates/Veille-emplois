@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common'
-import nodemailer, { type Transporter } from 'nodemailer'
+import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer'
 import { APP_CONFIG, type AppConfig, type MailConfig } from '../config.js'
 import type { RenderedEmail } from '../digest/format.js'
 
@@ -32,6 +32,18 @@ export function explainSmtpError(error: unknown): unknown {
     })
   }
   return error
+}
+
+/** Objet, textes et pièces jointes d'un e-mail, tels que nodemailer les envoie. */
+export function messageContent(email: RenderedEmail): Pick<SendMailOptions, 'subject' | 'text' | 'html' | 'attachments'> {
+  return {
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
+    ...(email.attachments?.length
+      ? { attachments: email.attachments.map(({ filename, content, contentType }) => ({ filename, content: Buffer.from(content), contentType })) }
+      : {}),
+  }
 }
 
 /** En-tête lu par MyBestConsultant (src/lib/ao/imap.ts) pour classer l'offre dans la source « Scraping ». */
@@ -86,7 +98,7 @@ export class Mailer implements OnModuleDestroy {
     if (!mail) throw new Error("Envoi demandé sans configuration de messagerie (SMTP_*, MAIL_* et OFFERS_TO dans l'environnement).")
     const to = recipients(mail)
     const info = await this.connection(mail)
-      .sendMail({ from: mail.from, to, subject: email.subject, text: email.text, html: email.html, headers })
+      .sendMail({ from: mail.from, to, ...messageContent(email), headers })
       .catch((error: unknown) => {
         throw explainSmtpError(error)
       })

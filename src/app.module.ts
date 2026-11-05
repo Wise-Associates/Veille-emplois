@@ -7,6 +7,7 @@ import { ScanService } from './scan.service.js'
 import { SettingsLoader } from './settings/settings-loader.js'
 import { createSources, SOURCE_FACTORY, type SourceFactory } from './sources/sources.js'
 import { StateStore } from './state/state-store.js'
+import { NoticePdfReader } from './tenders/notice-pdf.js'
 
 export interface RunOptions {
   dryRun: boolean
@@ -33,6 +34,7 @@ export class AppModule {
         SettingsLoader,
         StateStore,
         Mailer,
+        NoticePdfReader,
         ScanService,
       ],
     }

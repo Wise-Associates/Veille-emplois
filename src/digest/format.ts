@@ -5,10 +5,18 @@
 import { frenchDay, frenchDeadline } from '../dates.js'
 import type { Listing } from '../listing.js'
 
+/** Pièce jointe d'un e-mail : l'avis officiel en PDF d'un appel d'offres (tenders/notice-pdf.ts). */
+export interface EmailAttachment {
+  filename: string
+  content: Uint8Array
+  contentType: string
+}
+
 export interface RenderedEmail {
   subject: string
   text: string
   html: string
+  attachments?: EmailAttachment[]
 }
 
 /** En français, 0 et 1 prennent le singulier. */

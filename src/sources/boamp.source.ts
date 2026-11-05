@@ -11,7 +11,7 @@ import type { Listing, ListingSource, SourceBatch, SourceContext } from '../list
 import { ORGANISATIONS, OTHER_BUYERS_ID, type Organisation } from '../organisations.js'
 import type { AllBuyersSearch } from '../tenders/all-buyers.js'
 import { matchOrganisation, type Buyer } from '../tenders/buyer-match.js'
-import { limitText } from '../text.js'
+import { limitText, webUrl } from '../text.js'
 
 const API_URL = 'https://boamp-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/boamp/records'
 /**
@@ -262,6 +262,50 @@ export function boampDescription(donnees: Json): { description?: string; locatio
   return { description: blocks.length ? limitText(blocks.join('\n\n')) : undefined, location: shortLocation(location) }
 }
 
+/**
+ * Avis officiel en PDF, à l'adresse que construit la page d'un avis sur boamp.fr pour les données au schéma 3 (tous les
+ * avis ouverts le 05/11/2026, 100 sur 100 relevés) : /telechargements/FILES/PDF/<année>/<mois de parution>/<idweb>.pdf.
+ * Pour un autre schéma, la page utilise une autre adresse : le téléchargement échouerait, et l'offre partirait sans son
+ * PDF (signalé dans le récapitulatif). undefined si l'identifiant ou la date de parution n'ont pas la forme attendue.
+ */
+export function boampNoticePdfUrl(record: Pick<BoampRecord, 'idweb' | 'dateparution'>): string | undefined {
+  const day = /^(\d{4})-(\d{2})-\d{2}/.exec(record.dateparution ?? '')
+  if (!day || !/^[\w-]+$/.test(record.idweb)) return undefined
+  return `https://www.boamp.fr/telechargements/FILES/PDF/${day[1]}/${day[2]}/${record.idweb}.pdf`
+}
+
+/**
+ * Lien du dossier de consultation (DCE) saisi par l'acheteur, à défaut celui de son profil d'acheteur (la plateforme où
+ * se trouve le dossier). Champs relevés sur les avis ouverts le 05/11/2026 : avis européens (eForms), documents du
+ * premier lot qui en a, puis profil de l'acheteur ; avis nationaux (FNSimple, MAPA, DSP), adresse des documents puis du
+ * profil. Seuls les liens web sont gardés (webUrl).
+ */
+export function boampDocumentsUrl(donnees: Json): string | undefined {
+  const eforms = child(donnees, 'EFORMS')
+  let candidates: Json[]
+  if (eforms && typeof eforms === 'object') {
+    const root = Object.values(eforms as Record<string, Json>)[0]
+    candidates = [
+      ...list(child(root, 'cac:ProcurementProjectLot')).flatMap((lot) =>
+        list(child(child(lot, 'cac:TenderingTerms'), 'cac:CallForTendersDocumentReference')).map((reference) =>
+          child(child(child(reference, 'cac:Attachment'), 'cac:ExternalReference'), 'cbc:URI'),
+        ),
+      ),
+      ...list(child(root, 'cac:ContractingParty')).map((party) => child(party, 'cbc:BuyerProfileURI')),
+    ]
+  } else {
+    const form = Object.values((donnees && typeof donnees === 'object' ? donnees : {}) as Record<string, Json>)[0]
+    const communication = child(child(form, 'initial'), 'communication')
+    candidates = [
+      child(communication, 'urlDocConsul'),
+      child(child(communication, 'documentMarche'), 'urlDocument'),
+      child(communication, 'urlProfilAch'),
+      child(child(form, 'organisme'), 'urlProfilAcheteur'),
+    ]
+  }
+  return candidates.map((candidate) => webUrl(text(candidate))).find((url) => url !== undefined)
+}
+
 /** Au-delà, le lieu d'exécution est coupé. */
 const MAX_LOCATION_CHARS = 200
 
@@ -295,6 +339,8 @@ export function boampRecordToListing(
   const donnees = parseDonnees(record) ?? {}
   const { description, location } = boampDescription(donnees)
   const mainCpv = boampMainCpv(donnees)
+  const noticePdfUrl = boampNoticePdfUrl(record)
+  const documentsUrl = boampDocumentsUrl(donnees)
   const descriptors = (record.descripteur_libelle ?? []).filter(Boolean)
   const departments = (record.code_departement ?? []).filter(Boolean)
   return {
@@ -318,6 +364,8 @@ export function boampRecordToListing(
     procedureId: record.contractfolderid ?? undefined,
     ...(mainCpv ? { mainCpv } : {}),
     ...(descriptors.length ? { descriptors } : {}),
+    ...(noticePdfUrl ? { noticePdfUrl } : {}),
+    ...(documentsUrl ? { documentsUrl } : {}),
   }
 }
 

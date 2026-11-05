@@ -36,6 +36,17 @@ export interface Listing {
   mainCpv?: string
   /** Descripteurs du BOAMP (« Logiciel », « Informatique (prestations de services) »…), pour un avis sans code CPV. */
   descriptors?: string[]
+  /**
+   * Avis officiel en PDF (BOAMP, TED), téléchargé au moment d'envoyer l'offre et joint à son e-mail (notice-pdf.ts).
+   * Adresse construite par la source à partir de l'identifiant de l'avis, jamais reprise du contenu de l'avis.
+   */
+  noticePdfUrl?: string
+  /**
+   * Dossier de consultation (DCE) ou, à défaut, profil d'acheteur : lien saisi par l'acheteur dans l'avis, vers sa
+   * plateforme. Seulement affiché dans l'e-mail : le dossier n'est jamais téléchargé (ADR 0009 : conditions d'usage
+   * des plateformes, connexion exigée).
+   */
+  documentsUrl?: string
 }
 
 /** Ce qu'une source a lu lors d'un passage. */

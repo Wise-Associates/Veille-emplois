@@ -10,7 +10,7 @@ import type { Listing, ListingSource, SourceBatch } from '../listing.js'
 import { ORGANISATIONS, OTHER_BUYERS_ID, type Organisation } from '../organisations.js'
 import type { AllBuyersSearch } from '../tenders/all-buyers.js'
 import { matchOrganisation } from '../tenders/buyer-match.js'
-import { limitText } from '../text.js'
+import { limitText, webUrl } from '../text.js'
 import { PUBLICATION_LOOKBACK_DAYS } from './boamp.source.js'
 
 const API_URL = 'https://api.ted.europa.eu/v3/notices/search'
@@ -29,6 +29,7 @@ const FIELDS = [
   'procedure-type',
   'procedure-identifier',
   'main-classification-proc',
+  'document-url-lot',
 ]
 
 /** Champ multilingue : { "fra": "…" } ou { "fra": ["…"] }. */
@@ -48,6 +49,8 @@ const noticeSchema = z.object({
   'procedure-identifier': oneOrMany.optional(),
   /** Code CPV principal de la procédure (les codes secondaires et ceux des lots ne comptent pas, it-scope.ts). */
   'main-classification-proc': oneOrMany.optional(),
+  /** Lien du dossier de consultation de chaque lot, vers la plateforme de l'acheteur. */
+  'document-url-lot': oneOrMany.optional(),
 })
 const responseSchema = z.object({ notices: z.array(noticeSchema), totalNoticeCount: z.number().int() })
 
@@ -203,6 +206,7 @@ export function tedNoticeToListing(
   const procedure = values(notice['procedure-type'])[0]
   const buyerName = french(notice['buyer-name'])
   const mainCpv = values(notice['main-classification-proc'])[0]
+  const documentsUrl = values(notice['document-url-lot']).map((url) => webUrl(url)).find((url) => url !== undefined)
   return {
     kind: 'tender',
     id: number,
@@ -220,6 +224,9 @@ export function tedNoticeToListing(
     description: description ? limitText(description) : undefined,
     procedureId: values(notice['procedure-identifier'])[0],
     ...(mainCpv ? { mainCpv } : {}),
+    // Avis officiel en PDF, en français : même adresse que celle du champ `links` de l'API (links.pdf.FRA).
+    noticePdfUrl: `https://ted.europa.eu/fr/notice/${encodeURIComponent(number)}/pdf`,
+    ...(documentsUrl ? { documentsUrl } : {}),
   }
 }
 

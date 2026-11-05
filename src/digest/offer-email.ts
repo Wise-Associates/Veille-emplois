@@ -7,7 +7,7 @@
 import { frenchDeadline } from '../dates.js'
 import type { Listing } from '../listing.js'
 import { organisationName, ORGANISATIONS, type Organisation } from '../organisations.js'
-import { escapeHtml, safeUrl, STYLE, type RenderedEmail } from './format.js'
+import { escapeHtml, safeUrl, STYLE, type EmailAttachment, type RenderedEmail } from './format.js'
 
 const KIND = {
   tender: { label: "Appel d'offres", deadline: 'Date limite de réponse', link: 'Avis officiel' },
@@ -19,30 +19,47 @@ const MAX_SUBJECT = 180
 
 const FOOTER = 'Annonce relevée automatiquement par la veille marchés et emplois, à partir de sources publiques.'
 
-export function renderOfferEmail(listing: Listing, organisations: readonly Organisation[] = ORGANISATIONS): RenderedEmail {
+/** Ligne du tableau de l'e-mail ; `href` : lien http(s) déjà vérifié, rendu cliquable dans la version HTML. */
+type Field = { label: string; value: string; href?: string }
+
+/**
+ * `attachments` : avis officiel en PDF d'un appel d'offres (déjà téléchargé), joint au message et annoncé dans son
+ * texte. MyBestConsultant lit le texte des PDF joints et garde la pièce jointe, téléchargeable depuis la page de l'offre.
+ */
+export function renderOfferEmail(
+  listing: Listing,
+  organisations: readonly Organisation[] = ORGANISATIONS,
+  attachments: readonly EmailAttachment[] = [],
+): RenderedEmail {
   const kind = KIND[listing.kind]
   // Avis d'un acheteur non suivi (recherche chez tous les acheteurs) : l'acheteur est le client.
   const organisation = listing.buyer ?? organisationName(listing.organisationId, organisations)
   const url = safeUrl(listing.url)
+  const documentsUrl = listing.documentsUrl ? safeUrl(listing.documentsUrl) : null
   const subject = `${kind.label} — ${organisation} — ${listing.title}`.replace(/\s+/g, ' ')
 
-  const fields: [string, string][] = [
-    ['Intitulé', listing.title],
-    ['Client', organisation],
-    ...(listing.location ? [['Lieu', listing.location] as [string, string]] : []),
-    ...(listing.details.length ? [['Précisions', listing.details.join(' · ')] as [string, string]] : []),
+  const fields: Field[] = [
+    { label: 'Intitulé', value: listing.title },
+    { label: 'Client', value: organisation },
+    ...(listing.location ? [{ label: 'Lieu', value: listing.location }] : []),
+    ...(listing.details.length ? [{ label: 'Précisions', value: listing.details.join(' · ') }] : []),
     // Pas de date de publication : MyBestConsultant n'en garde pas, et son IA classe une date qui n'est ni un
     // démarrage ni une date limite d'après son jour de la semaine — elle deviendrait une fausse date limite.
-    ...(listing.deadline ? [[kind.deadline, frenchDeadline(listing.deadline)] as [string, string]] : []),
-    ['Référence', listing.id],
-    [kind.link, url ?? 'lien indisponible'],
+    ...(listing.deadline ? [{ label: kind.deadline, value: frenchDeadline(listing.deadline) }] : []),
+    { label: 'Référence', value: listing.id },
+    url ? { label: kind.link, value: url, href: url } : { label: kind.link, value: 'lien indisponible' },
+    ...(attachments.length
+      ? [{ label: `${kind.link} (PDF)`, value: `joint à cet e-mail (${attachments.map((a) => a.filename).join(', ')})` }]
+      : []),
+    // Lien saisi par l'acheteur vers sa plateforme : le dossier n'est pas téléchargé par la veille (ADR 0009).
+    ...(documentsUrl ? [{ label: 'Dossier de consultation', value: documentsUrl, href: documentsUrl }] : []),
   ]
   const description = listing.description?.trim() || 'Pas de description dans la source : voir l\'annonce en ligne.'
 
   const text = [
     `${kind.label} — ${organisation}`,
     '',
-    ...fields.map(([label, value]) => `${label} : ${value}`),
+    ...fields.map(({ label, value }) => `${label} : ${value}`),
     '',
     'Description',
     '-----------',
@@ -53,8 +70,8 @@ export function renderOfferEmail(listing: Listing, organisations: readonly Organ
   ].join('\n')
 
   const rows = fields
-    .map(([label, value]) => {
-      const cell = label === kind.link && url ? `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>` : escapeHtml(value)
+    .map(({ label, value, href }) => {
+      const cell = href ? `<a href="${escapeHtml(href)}">${escapeHtml(value)}</a>` : escapeHtml(value)
       return `<tr><td style="${STYLE.label}">${escapeHtml(label)}</td><td>${cell}</td></tr>`
     })
     .join('\n')
@@ -72,5 +89,10 @@ export function renderOfferEmail(listing: Listing, organisations: readonly Organ
     '</div>',
   ].join('\n')
 
-  return { subject: subject.length > MAX_SUBJECT ? `${subject.slice(0, MAX_SUBJECT - 1)}…` : subject, text, html }
+  return {
+    subject: subject.length > MAX_SUBJECT ? `${subject.slice(0, MAX_SUBJECT - 1)}…` : subject,
+    text,
+    html,
+    ...(attachments.length ? { attachments: [...attachments] } : {}),
+  }
 }

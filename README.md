@@ -31,7 +31,10 @@ mots-clés (SaaS, digitalisation, données, IA, TMA…, voir « Périmètre info
 5. Chaque nouvelle offre part dans **son propre e-mail** vers la boîte AO (`OFFERS_TO`) : intitulé, client
    (l'organisme ; pour un acheteur non suivi, l'acheteur lui-même), lieu, précisions, dates, référence, lien, puis le texte complet. Quand la liste de la source ne
    donne pas tout, la page de l'offre est lue au moment de l'envoyer (Choisir le service public : employeur exact et
-   date limite ; Expertise France et La Banque Postale : texte de l'offre).
+   date limite ; Expertise France et La Banque Postale : texte de l'offre). Un appel d'offres du BOAMP ou de TED part
+   avec **l'avis officiel en PDF en pièce jointe**, téléchargé au moment de l'envoyer, et le **lien du dossier de
+   consultation** de l'acheteur (DCE), qui n'est jamais téléchargé (voir
+   [docs/adr/0009-avis-pdf-joint-et-lien-du-dossier-de-consultation.md](docs/adr/0009-avis-pdf-joint-et-lien-du-dossier-de-consultation.md)).
 6. Au plus `MAX_OFFER_EMAILS_PER_RUN` offres par passage (200 par défaut), une par seconde, et aucune nouvelle offre
    commencée après 25 minutes de passage ; appels d'offres d'abord. Les autres attendent le passage suivant.
    **Le premier passage** trouve toutes les offres informatiques en ligne (435 le 27/10/2026, dont environ 390
@@ -57,7 +60,8 @@ Le récapitulatif signale en tête les **points à vérifier** :
 - nombre d'offres d'emploi qui s'effondre (vidé, ou divisé par plus de deux) : l'alerte revient **chaque jour**
   jusqu'à ce que la source retrouve son volume ; pendant ce temps, rien n'est oublié de ce qu'elle avait montré ;
 - aucun appel d'offres depuis trois semaines (requête BOAMP / TED devenue invalide) ;
-- avis BOAMP au contenu illisible, offres envoyées sans le détail de leur page, offres AFD dont l'examen est reporté ;
+- avis BOAMP au contenu illisible, offres envoyées sans le détail de leur page ou sans l'avis officiel en PDF
+  (téléchargement impossible), offres AFD dont l'examen est reporté ;
 - réglages de MyBestConsultant indisponibles ou invalides (repli sur la dernière version connue ou sur
   `config/defaults.json`, voir « Réglages »), ou `VEILLE_CONFIG_URL` non défini.
 
@@ -244,6 +248,7 @@ utilisée quand il ne répond pas. Chaque passage ajoute un commit : l'historiqu
 | Logique de reconnaissance des acheteurs | `src/tenders/buyer-match.ts`, cas dans `src/tenders/buyer-match.spec.ts` |
 | Lecture des réglages, repli | `src/settings/` (format : `veille-settings.ts`, même format que MyBestConsultant) |
 | E-mail d'une offre (boîte AO) | `src/digest/offer-email.ts` |
+| Avis officiel en PDF joint, lien du dossier de consultation | `src/tenders/notice-pdf.ts` ; adresses : `boampNoticePdfUrl`, `boampDocumentsUrl` (`src/sources/boamp.source.ts`), `tedNoticeToListing` (`src/sources/ted.source.ts`) |
 | Récapitulatif de l'équipe | `src/digest/digest.ts` |
 | Calcul des nouveautés, ordre d'envoi, alertes de volume | `src/state/run-state.ts` |
 | Valeurs du périmètre informatique (codes CPV, expressions, sigles) | admin de MyBestConsultant, « Veille » → Filtre informatique |
@@ -268,6 +273,7 @@ src/
   phrases.ts              comparaison d'expressions sans accents ni majuscules
   tenders/buyer-match.ts  reconnaissance de l'acheteur d'un avis
   tenders/all-buyers.ts   recherche chez tous les acheteurs (mots-clés, classification)
+  tenders/notice-pdf.ts   avis officiel en PDF (BOAMP, TED), téléchargé et joint à l'e-mail de l'offre
   sources/                une source par fichier (BOAMP, TED, Choisir le service public, sites carrières)
   state/                  calcul des nouveautés (règles pures) et fichier d'état
   digest/                 e-mail d'une offre, récapitulatif, mise en forme commune

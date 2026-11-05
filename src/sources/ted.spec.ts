@@ -33,7 +33,15 @@ describe('avis TED', () => {
       details: ["TED (Journal officiel de l'UE)", 'Acheteur : EXPERTISE FRANCE', 'Procédure ouverte'],
       description: undefined,
       procedureId: 'proc-fictive',
+      noticePdfUrl: 'https://ted.europa.eu/fr/notice/700001-2026/pdf',
     })
+  })
+
+  it('donne le lien du dossier de consultation du premier lot qui en a un, jamais un lien non web', () => {
+    const listing = tedNoticeToListing(notice({ 'document-url-lot': ['ftp://dce.exemple.test/1', 'https://dce.exemple.test/2', 'https://dce.exemple.test/3'] }))
+    assert.equal(listing?.documentsUrl, 'https://dce.exemple.test/2')
+    assert.equal(tedNoticeToListing(notice({ 'document-url-lot': 'javascript:alert(1)' }))?.documentsUrl, undefined)
+    assert.equal(tedNoticeToListing(notice({ 'document-url-lot': ['https://site-officiel.test@dce.exemple.test/1', 'https://[::1]/dce'] }))?.documentsUrl, undefined)
   })
 
   it('reprend le code CPV principal de la procédure', () => {

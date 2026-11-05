@@ -5,8 +5,9 @@ import { Logger } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { CLOCK } from './clock.js'
 import { APP_CONFIG, type AppConfig } from './config.js'
-import type { RenderedEmail } from './digest/format.js'
+import type { EmailAttachment, RenderedEmail } from './digest/format.js'
 import type { Listing, ListingSource } from './listing.js'
+import { HttpError } from './http/http-client.js'
 import { Mailer } from './mail/mailer.js'
 import { PartialDeliveryError, ScanService } from './scan.service.js'
 import { DEFAULT_SETTINGS } from './settings/defaults.js'
@@ -15,6 +16,7 @@ import type { ChosenSettings } from './settings/veille-settings.js'
 import { SOURCE_FACTORY } from './sources/sources.js'
 import { EMPTY_STATE, type VeilleState } from './state/run-state.js'
 import { StateStore } from './state/state-store.js'
+import { NoticePdfReader } from './tenders/notice-pdf.js'
 
 Logger.overrideLogger(false)
 
@@ -51,6 +53,8 @@ interface Options {
   digestMode?: AppConfig['digestMode']
   /** Réglages renvoyés au passage (par défaut : ceux du dépôt, sans avertissement). */
   settings?: Partial<ChosenSettings>
+  /** Téléchargement de l'avis officiel en PDF (par défaut : jamais appelé, aucune offre n'en a). */
+  readPdf?: (url: string, reference: string) => Promise<EmailAttachment>
 }
 
 async function scanWith(options: Options) {
@@ -58,6 +62,8 @@ async function scanWith(options: Options) {
   const offers: RenderedEmail[] = []
   const digests: RenderedEmail[] = []
   const saved: VeilleState[] = []
+  /** Adresses d'avis PDF demandées : une offre sans adresse, ou échue, ne doit jamais en demander. */
+  const pdfRequests: string[] = []
   const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null, settings: null }
   const settingsLoader = {
     load: async (snapshot: VeilleState['settings']): Promise<ChosenSettings> => ({ settings: DEFAULT_SETTINGS, origin: 'defaults', warning: null, snapshot, ...options.settings }),
@@ -83,9 +89,19 @@ async function scanWith(options: Options) {
       { provide: APP_CONFIG, useValue: config },
       { provide: StateStore, useValue: { load: async () => known, save: async (state: VeilleState) => (calls.push('état'), saved.push(state)) } },
       { provide: Mailer, useValue: mailer },
+      {
+        provide: NoticePdfReader,
+        useValue: {
+          read: async (url: string, reference: string) => {
+            pdfRequests.push(url)
+            if (!options.readPdf) throw new Error('téléchargement non prévu par ce test')
+            return options.readPdf(url, reference)
+          },
+        },
+      },
     ],
   }).compile()
-  return { scan: module.get(ScanService), calls, offers, digests, saved }
+  return { scan: module.get(ScanService), calls, offers, digests, saved, pdfRequests }
 }
 
 const seenIds = (state: VeilleState | undefined, sourceId: string) => Object.keys(state?.sources[sourceId]?.seen ?? {}).sort()
@@ -223,6 +239,80 @@ describe('passage de la veille', () => {
     assert.equal(reads, 3)
     assert.equal(offers.length, 5)
     assert.match(digests[0]?.text ?? '', /5 offre\(s\) envoyée\(s\) sans le détail de leur page \(lecture impossible, abandonnée après 3 échecs de suite\)/)
+  })
+
+  it('joint l\'avis officiel en PDF à l\'e-mail d\'un appel d\'offres, et l\'envoie sans lui si le téléchargement échoue (signalé)', async () => {
+    const tender = (id: string) => offer(id, { kind: 'tender', noticePdfUrl: `https://www.boamp.fr/telechargements/FILES/PDF/2026/10/${id}.pdf` })
+    const requested: string[] = []
+    const readPdf = async (url: string, reference: string): Promise<EmailAttachment> => {
+      requested.push(url)
+      if (reference === 'T2') throw new Error('HTTP 404 sur https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T2.pdf')
+      return { filename: `avis-${reference}.pdf`, content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }
+    }
+    const { scan, offers, digests } = await scanWith({ sources: [source('t', [tender('T1'), tender('T2'), offer('J1')], { kind: 'tender' })], readPdf })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['T1', 'T2', 'J1'], 'toutes envoyées')
+    assert.deepEqual(requested, ['https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T1.pdf', 'https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T2.pdf'])
+    assert.deepEqual(offers[0]?.attachments?.map((a) => a.filename), ['avis-T1.pdf'])
+    assert.match(offers[0]?.text ?? '', /^Avis officiel \(PDF\) : joint à cet e-mail \(avis-T1\.pdf\)$/m)
+    assert.equal(offers[1]?.attachments, undefined)
+    assert.doesNotMatch(offers[1]?.text ?? '', /Avis officiel \(PDF\)/)
+    assert.match(digests[0]?.text ?? '', /Source t : 1 offre\(s\) envoyée\(s\) sans l'avis officiel en PDF \(téléchargement impossible\)/)
+  })
+
+  it('ne télécharge pas l\'avis PDF d\'une offre échue, ni en essai', async () => {
+    const outdated = offer('T1', { kind: 'tender', deadline: '2026-10-01', noticePdfUrl: 'https://ted.europa.eu/fr/notice/T1/pdf' })
+    const { scan, offers, pdfRequests } = await scanWith({ sources: [source('t', [outdated])] })
+    const summary = await scan.run()
+    assert.equal(summary.outdated, 1)
+    assert.equal(offers.length, 0)
+    assert.deepEqual(pdfRequests, [])
+    const trial = await scanWith({ sources: [source('t', [outdated])], dryRun: true })
+    await trial.scan.run()
+    assert.deepEqual(trial.pdfRequests, [])
+  })
+
+  it('renvoie aussitôt sans l\'avis PDF une offre dont le message est refusé avec lui (sinon refusée à chaque passage)', async () => {
+    const pdf = { filename: 'avis-T1.pdf', content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }
+    const { scan, offers, digests, saved } = await scanWith({
+      sources: [source('t', [offer('T1', { kind: 'tender', noticePdfUrl: 'https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T1.pdf' })], { kind: 'tender' })],
+      readPdf: async () => pdf,
+      sendOffer: async (email) => {
+        if (email.attachments?.length) throw Object.assign(new Error('Message failed: 552 pièce jointe refusée'), { code: 'EMESSAGE', responseCode: 552 })
+      },
+    })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['T1'], 'offre envoyée, sans erreur de passage')
+    assert.equal(offers.length, 1)
+    assert.equal(offers[0]?.attachments, undefined)
+    assert.doesNotMatch(offers[0]?.text ?? '', /Avis officiel \(PDF\)/)
+    assert.deepEqual(seenIds(saved[0], 't'), ['T1'])
+    assert.match(digests[0]?.text ?? '', /Avis PDF refusé avec le message, offre envoyée sans lui : « Développeur fictif T1 » \(dinum, T1\) : Message failed: 552 pièce jointe refusée/)
+  })
+
+  it('continue de télécharger les avis PDF d\'une source après des avis introuvables (404) : seul un site injoignable arrête', async () => {
+    const readPdf = async (url: string): Promise<EmailAttachment> => {
+      throw new HttpError(`HTTP 404 sur ${url}`, 404)
+    }
+    const tenders = ['T1', 'T2', 'T3', 'T4'].map((id) => offer(id, { kind: 'tender', noticePdfUrl: `https://ted.europa.eu/fr/notice/${id}/pdf` }))
+    const { scan, digests, pdfRequests } = await scanWith({ sources: [source('t', tenders, { kind: 'tender' })], readPdf })
+    await scan.run()
+    assert.equal(pdfRequests.length, 4)
+    assert.match(digests[0]?.text ?? '', /4 offre\(s\) envoyée\(s\) sans l'avis officiel en PDF \(téléchargement impossible\)/)
+  })
+
+  it('abandonne le téléchargement des avis PDF d\'une source après 3 échecs de suite, et envoie quand même ses offres', async () => {
+    let reads = 0
+    const readPdf = async (): Promise<EmailAttachment> => {
+      reads++
+      throw new HttpError('https://ted.europa.eu/fr/notice/T1/pdf injoignable ou réponse interrompue (délai dépassé)')
+    }
+    const tenders = ['T1', 'T2', 'T3', 'T4'].map((id) => offer(id, { kind: 'tender', noticePdfUrl: `https://ted.europa.eu/fr/notice/${id}/pdf` }))
+    const { scan, offers, digests } = await scanWith({ sources: [source('t', tenders, { kind: 'tender' })], readPdf })
+    await scan.run()
+    assert.equal(reads, 3)
+    assert.equal(offers.length, 4)
+    assert.match(digests[0]?.text ?? '', /4 offre\(s\) envoyée\(s\) sans l'avis officiel en PDF \(téléchargement impossible, abandonné après 3 échecs de suite\)/)
   })
 
   it('retient l\'état même si le récapitulatif ne part pas : les offres envoyées ne repartiront pas', async () => {

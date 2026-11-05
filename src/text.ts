@@ -21,6 +21,21 @@ export function htmlToText(html: string): string {
   return limitText($('body').text())
 }
 
+/**
+ * Lien web (http ou https) saisi par un acheteur dans un avis, rendu cliquable dans l'e-mail, ou undefined. Écartés :
+ * les autres protocoles, les identifiants (« https://site-officiel@autre-site/… » mène à autre-site), les adresses IP
+ * et les noms sans domaine (réseau interne de celui qui clique). Le BOAMP écrit les adresses avec des entités HTML
+ * (« …?id=1&amp;lot=2 ») : elles sont décodées.
+ */
+export function webUrl(value: string | undefined): string | undefined {
+  const decoded = value?.trim().replaceAll('&amp;', '&')
+  if (!decoded || !URL.canParse(decoded)) return undefined
+  const url = new URL(decoded)
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined
+  if (url.username || url.password || !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(url.hostname)) return undefined
+  return url.href
+}
+
 /** Espaces normalisés, trois sauts de ligne ou plus réduits à deux, longueur bornée. */
 export function limitText(text: string): string {
   const clean = text

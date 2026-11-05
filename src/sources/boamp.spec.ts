@@ -11,6 +11,8 @@ import {
   boampBuyers,
   boampMainCpv,
   boampDescription,
+  boampDocumentsUrl,
+  boampNoticePdfUrl,
   boampRecordToListing,
   boampWhere,
   extractBoampBuyers,
@@ -160,7 +162,40 @@ describe('avis du BOAMP', () => {
       location: 'Département(s) 92',
       description: undefined,
       procedureId: 'proc-fictive',
+      noticePdfUrl: 'https://www.boamp.fr/telechargements/FILES/PDF/2026/10/26-000001.pdf',
     })
+  })
+
+  it('joint l\'avis officiel en PDF, à l\'adresse que donne boamp.fr (année et mois de parution)', () => {
+    assert.equal(boampNoticePdfUrl(record({ dateparution: '2026-09-30' })), 'https://www.boamp.fr/telechargements/FILES/PDF/2026/09/26-000001.pdf')
+    assert.equal(boampNoticePdfUrl(record({ dateparution: null })), undefined, 'sans date de parution, pas d\'adresse inventée')
+    assert.equal(boampNoticePdfUrl(record({ idweb: '../26-000001' })), undefined, 'identifiant inattendu : rien dans le chemin')
+  })
+
+  it('donne le lien du dossier de consultation saisi par l\'acheteur, à défaut son profil d\'acheteur, jamais un lien non web', () => {
+    const lot = (uri: string) => ({ 'cac:TenderingTerms': { 'cac:CallForTendersDocumentReference': { 'cac:Attachment': { 'cac:ExternalReference': { 'cbc:URI': uri } } } } })
+    const eformsLinks = (lots: unknown[], profile?: string) => ({
+      EFORMS: { ContractNotice: { 'cac:ContractingParty': { 'cbc:BuyerProfileURI': profile }, 'cac:ProcurementProjectLot': lots } },
+    })
+    // Le BOAMP écrit les adresses avec des entités HTML (« &amp; »).
+    assert.equal(
+      boampDocumentsUrl(eformsLinks([lot('https://dce.exemple.test/consultation?id=1&amp;lot=2'), lot('https://dce.exemple.test/autre')], 'https://profil.exemple.test')),
+      'https://dce.exemple.test/consultation?id=1&lot=2',
+    )
+    assert.equal(boampDocumentsUrl(eformsLinks([lot('javascript:alert(1)')], 'http://profil.exemple.test')), 'http://profil.exemple.test/')
+    const fns = (communication: Record<string, unknown>) => ({ FNSimple: { initial: { communication } } })
+    assert.equal(boampDocumentsUrl(fns({ urlProfilAch: 'https://profil.exemple.test/', urlDocConsul: 'https://dce.exemple.test/3' })), 'https://dce.exemple.test/3')
+    assert.equal(boampDocumentsUrl(fns({ urlProfilAch: 'https://profil.exemple.test/' })), 'https://profil.exemple.test/')
+    assert.equal(boampDocumentsUrl({ DSP: { initial: { communication: { documentMarche: { urlDocument: 'https://dce.exemple.test/4' } } } } }), 'https://dce.exemple.test/4')
+    assert.equal(boampDocumentsUrl({ MAPA: { organisme: { urlProfilAcheteur: 'https://profil.exemple.test/mapa' } } }), 'https://profil.exemple.test/mapa')
+    assert.equal(boampDocumentsUrl({ MAPA: { organisme: { acheteurPublic: 'A.S.P.' } } }), undefined)
+    // Lien saisi par un tiers : ni identifiants (le lien semble mener au site officiel), ni adresse IP, ni nom local.
+    for (const deceptive of ['https://www.marches-publics.gouv.fr@dce.exemple.test/1', 'http://192.168.1.1/dce', 'http://intranet/dce']) {
+      assert.equal(boampDocumentsUrl(fns({ urlDocConsul: deceptive })), undefined, deceptive)
+    }
+
+    const donnees = JSON.stringify(fns({ urlDocConsul: 'https://dce.exemple.test/3' }))
+    assert.equal(boampRecordToListing(record({ nomacheteur: 'A.S.P.', donnees }))?.documentsUrl, 'https://dce.exemple.test/3')
   })
 
   it('neutralise une expression hostile des réglages et ne produit jamais de clause vide', () => {

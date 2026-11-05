@@ -29,6 +29,8 @@ export interface RequestOptions {
    * pour qu'un site ne puisse pas renvoyer le scanner vers une adresse interne.
    */
   allowRedirect?: (url: URL) => boolean
+  /** Taille maximale de la réponse, plus petite que MAX_BODY_BYTES (avis PDF) : la lecture s'arrête au-delà. */
+  maxBytes?: number
 }
 
 /** Redirections suivies au plus pour une adresse vérifiée (allowRedirect). */
@@ -74,14 +76,25 @@ function isTransient(status: number): boolean {
   return status === 429 || status >= 500
 }
 
-async function readCapped(response: Response, url: string): Promise<Uint8Array> {
+/**
+ * Site injoignable, délai dépassé ou panne passagère (429, 5xx), par opposition à une réponse propre à la ressource
+ * demandée (404, fichier refusé…) : seule la première justifie de cesser d'interroger le site pendant le passage.
+ */
+export function isSiteUnavailable(error: unknown): boolean {
+  return error instanceof HttpError && (error.status === undefined || isTransient(error.status))
+}
+
+const readableSize = (bytes: number) => (bytes >= 1024 * 1024 ? `${bytes / 1024 / 1024} Mo` : `${bytes / 1024} Ko`)
+
+async function readCapped(response: Response, url: string, maxBytes: number): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
   let size = 0
   for await (const chunk of response.body ?? []) {
     size += chunk.byteLength
-    if (size > MAX_BODY_BYTES) {
-      await response.body?.cancel()
-      throw new HttpError(`Réponse de ${describe(url)} trop volumineuse (plus de ${MAX_BODY_BYTES / 1024 / 1024} Mo).`, 413)
+    if (size > maxBytes) {
+      // Sortir de la boucle annule la lecture du flux ; un cancel() ici échouerait (flux verrouillé par la boucle) et
+      // ferait passer la réponse trop lourde pour un site injoignable.
+      throw new HttpError(`Réponse de ${describe(url)} trop volumineuse (plus de ${readableSize(maxBytes)}).`, 413)
     }
     chunks.push(chunk)
   }
@@ -114,6 +127,11 @@ export class HttpClient {
       throw new HttpError(`Réponse inattendue de ${describe(url)} (le format a peut-être changé) — ${issues.join(' ; ')}`)
     }
     return result.data
+  }
+
+  /** Fichier (avis officiel en PDF) : octets bruts, bornés par `maxBytes` (au plus MAX_BODY_BYTES). */
+  async binary(url: string, options: RequestOptions = {}): Promise<Uint8Array> {
+    return (await this.request(url, options)).body
   }
 
   async head(url: string): Promise<Headers> {
@@ -166,7 +184,7 @@ export class HttpClient {
         await response.body?.cancel()
         throw new HttpError(`HTTP ${response.status} sur ${describe(url)}`, response.status)
       }
-      return { headers: response.headers, body: await readCapped(response, url) }
+      return { headers: response.headers, body: await readCapped(response, url, Math.min(options.maxBytes ?? MAX_BODY_BYTES, MAX_BODY_BYTES)) }
     } catch (error) {
       if (error instanceof HttpError) throw error
       throw new HttpError(`${describe(url)} injoignable ou réponse interrompue (${networkReason(error)})`)
