@@ -177,8 +177,10 @@ EOF
 sudo cat /home/deploy/.ssh/authorized_keys     # deux lignes : mbc-deploy et veille-deploy
 ```
 
-Depuis votre poste : `ssh -i veille-deploy-key deploy@<ip> status` affiche « aucune version déployée », et
-`ssh -i veille-deploy-key deploy@<ip> ls` est refusé (usage). La clé privée ira dans GitHub (3) : effacez ensuite les
+Depuis votre poste : `ssh -o IdentitiesOnly=yes -i veille-deploy-key deploy@<ip> status` affiche « aucune version
+déployée », et `ssh -o IdentitiesOnly=yes -i veille-deploy-key deploy@<ip> ls` est refusé (usage). `-o
+IdentitiesOnly=yes` : sans lui, SSH essaie d'abord toutes les clés de votre poste et le serveur coupe la connexion
+avant d'arriver à celle-ci (« Too many authentication failures ») ; le workflow de GitHub le passe aussi. La clé privée ira dans GitHub (3) : effacez ensuite les
 deux fichiers de votre poste. Perdue ou exposée : générez-en une autre et remplacez sa ligne et le secret.
 
 **Cette clé vaut un accès aux secrets de la veille.** Elle ne lance que `veille-deploy`, mais elle peut lui envoyer
