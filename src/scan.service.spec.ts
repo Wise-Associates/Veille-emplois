@@ -53,6 +53,8 @@ interface Options {
   digestMode?: AppConfig['digestMode']
   /** Réglages renvoyés au passage (par défaut : ceux du dépôt, sans avertissement). */
   settings?: Partial<ChosenSettings>
+  /** Copie du jour de l'état impossible (StateStore.save). */
+  stateWarning?: string
   /** Téléchargement de l'avis officiel en PDF (par défaut : jamais appelé, aucune offre n'en a). */
   readPdf?: (url: string, reference: string) => Promise<EmailAttachment>
 }
@@ -64,7 +66,7 @@ async function scanWith(options: Options) {
   const saved: VeilleState[] = []
   /** Adresses d'avis PDF demandées : une offre sans adresse, ou échue, ne doit jamais en demander. */
   const pdfRequests: string[] = []
-  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null, settings: null }
+  const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null, settings: null, aoSync: null }
   const settingsLoader = {
     load: async (snapshot: VeilleState['settings']): Promise<ChosenSettings> => ({ settings: DEFAULT_SETTINGS, origin: 'defaults', warning: null, snapshot, ...options.settings }),
   }
@@ -87,7 +89,10 @@ async function scanWith(options: Options) {
       { provide: SettingsLoader, useValue: settingsLoader },
       { provide: CLOCK, useValue: options.clock ?? { now: () => new Date('2026-10-22T05:00:00Z') } },
       { provide: APP_CONFIG, useValue: config },
-      { provide: StateStore, useValue: { load: async () => known, save: async (state: VeilleState) => (calls.push('état'), saved.push(state)) } },
+      {
+        provide: StateStore,
+        useValue: { load: async () => known, save: async (state: VeilleState) => (calls.push('état'), saved.push(state), { warning: options.stateWarning ?? null }) },
+      },
       { provide: Mailer, useValue: mailer },
       {
         provide: NoticePdfReader,
@@ -344,6 +349,21 @@ describe('passage de la veille', () => {
     await scan.run()
     assert.equal(digests.length, 1)
     assert.match(digests[0]?.text ?? '', /Source a : HTTP 503/)
+  })
+
+  it('suit le mode de récapitulatif du passage planifié plutôt que celui de la configuration', async () => {
+    const { scan, digests } = await scanWith({ sources: [source('a', [])], digestMode: 'always' })
+    await scan.run({ digestMode: 'problems' })
+    assert.equal(digests.length, 0, 'passage de la journée sans point à vérifier')
+    const morning = await scanWith({ sources: [source('a', [])], digestMode: 'problems' })
+    await morning.scan.run({ digestMode: 'always' })
+    assert.equal(morning.digests.length, 1, 'passage de 5 h : toujours')
+  })
+
+  it('signale dans le récapitulatif une copie du jour de l\'état impossible', async () => {
+    const { scan, digests } = await scanWith({ sources: [source('a', [offer('A2')])], stateWarning: "Copie du jour de l'état impossible (disque plein)" })
+    await scan.run()
+    assert.match(digests[0]?.text ?? '', /Fichier d'état : Copie du jour de l'état impossible \(disque plein\)/)
   })
 
   it('en essai, n\'envoie rien et ne retient rien', async () => {

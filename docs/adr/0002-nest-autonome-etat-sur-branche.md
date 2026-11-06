@@ -1,6 +1,7 @@
 # 0002 — Application Nest autonome, lancée par GitHub Actions, état sur une branche Git
 
-Date : 22 octobre 2026 · Statut : acceptée
+Date : 22 octobre 2026 · Statut : acceptée ; planification par GitHub Actions et état sur la branche Git remplacés à
+la bascule sur le VPS par l'ADR 0010 (le reste, NestJS autonome, `tsc`, `node:test`, est inchangé)
 
 ## Contexte
 

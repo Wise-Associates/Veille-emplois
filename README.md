@@ -19,10 +19,13 @@ mots-clés (SaaS, digitalisation, données, IA, TMA…, voir « Périmètre info
 
 ## Fonctionnement
 
-1. Le workflow GitHub `Veille quotidienne` démarre quatre fois par jour : 5 h, 9 h, 13 h et 17 h UTC.
+1. Un passage démarre quatre fois par jour : 5 h, 9 h, 13 h et 17 h UTC. Sur le VPS, c'est le planificateur de
+   l'application (`src/run/veille-scheduler.ts`, conteneur toujours lancé, voir « Mise en production ») ; avant la
+   bascule, c'était le workflow GitHub `Veille quotidienne`. Jamais deux passages en même temps (verrou du fichier
+   d'état).
 2. Chaque source est lue l'une après l'autre (5 minutes environ). Une source en panne n'empêche pas les autres.
-3. Une annonce est **nouvelle** si son identifiant n'a jamais été envoyé depuis sa source (fichier `etat.json`, sur
-   la branche Git `veille-etat`, voir « État de la veille »). Les sources d'offres d'emploi donnent toutes leurs offres
+3. Une annonce est **nouvelle** si son identifiant n'a jamais été envoyé depuis sa source (fichier `etat.json`, voir
+   « État de la veille »). Les sources d'offres d'emploi donnent toutes leurs offres
    en ligne ; pour les appels d'offres, ce sont **tous les avis encore ouverts** (date limite de réponse non passée,
    publiés depuis 120 jours) : le premier passage envoie tout ce à quoi on peut encore répondre, et un passage manqué
    est rattrapé tant que l'avis est ouvert.
@@ -47,11 +50,13 @@ mots-clés (SaaS, digitalisation, données, IA, TMA…, voir « Périmètre info
    celui-ci est sauté, signalé, et retenté au passage suivant.
 9. Un **récapitulatif** part ensuite vers l'équipe (`MAIL_TO`) : offres envoyées, offres en attente, points à
    vérifier. Le passage de 5 h l'envoie **toujours, même sans nouveauté** (son arrivée prouve que la veille tourne) ;
-   ceux de 9 h, 13 h et 17 h seulement s'il y a un point à vérifier (`DIGEST_MODE`).
-10. **MyBestConsultant lit aussitôt la boîte AO** (job `synchroniser`,
-    [docs/adr/0008-lecture-de-la-boite-ao-apres-chaque-passage.md](docs/adr/0008-lecture-de-la-boite-ao-apres-chaque-passage.md)) :
-    le workflow appelle sa route `/api/cron/ao-inbox`, et la rappelle tant qu'il reste des e-mails, pendant 15 minutes
-    au plus. Les offres envoyées y apparaissent sans attendre son passage quotidien.
+   ceux de 9 h, 13 h et 17 h seulement s'il y a un point à vérifier.
+10. **MyBestConsultant lit aussitôt la boîte AO**
+    ([docs/adr/0008-lecture-de-la-boite-ao-apres-chaque-passage.md](docs/adr/0008-lecture-de-la-boite-ao-apres-chaque-passage.md)) :
+    la veille appelle sa route `/api/cron/ao-inbox` (`AO_SYNC_URL`), et la rappelle tant qu'il reste des e-mails,
+    pendant 15 minutes au plus. Les offres envoyées y apparaissent sans attendre son passage quotidien.
+11. **Un passage en échec prévient l'équipe** par e-mail (`MAIL_TO`) : cause, état enregistré ou non, marche à
+    suivre (`src/digest/alert-email.ts`).
 
 Le récapitulatif signale en tête les **points à vérifier** :
 
@@ -126,7 +131,8 @@ par l'adresse de son site) est écarté.
 ## Prérequis
 
 - Node.js 22.12 ou plus (24 recommandé, voir `.nvmrc`) et npm.
-- Pour la production : un dépôt GitHub (privé) et une boîte e-mail avec accès SMTP, d'un domaine de l'organisation.
+- Pour la production : le serveur de MyBestConsultant (Docker), le dépôt GitHub et une boîte e-mail avec accès SMTP
+  (port 587), d'un domaine de l'organisation.
 
 ## Installation et commandes
 
@@ -172,8 +178,12 @@ recours ; le garder valide (vérifié au démarrage et par `npm test`).
 Variables d'environnement, toutes décrites dans [.env.example](.env.example) : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
 `SMTP_PASSWORD`, `MAIL_FROM`, `OFFERS_TO` (boîte AO), `MAIL_TO` (équipe, adresses séparées par des virgules),
 `MAX_OFFER_EMAILS_PER_RUN`, `STATE_FILE`, `VEILLE_CONFIG_URL` et `VEILLE_CONFIG_TOKEN` (facultatifs ; les deux
-derniers ensemble, voir « Réglages »). Une variable manquante ou invalide arrête le passage avant
-toute lecture (le message nomme la variable, jamais sa valeur).
+ensemble, voir « Réglages »), `AO_SYNC_URL` et `AO_SYNC_TOKEN` (facultatifs ; les deux ensemble, lecture de la boîte AO
+par MyBestConsultant après le passage). Une variable manquante ou invalide arrête le passage avant toute lecture (le
+message nomme la variable, jamais sa valeur). En production, elles sont dans `/etc/veille-marches-emplois/veille.env`
+sur le serveur (guide du VPS, 2.4).
+
+- Sur le serveur (Hetzner), `SMTP_PORT` doit être **587** : les ports sortants 25 et 465 y sont bloqués par défaut.
 
 - L'adresse de `MAIL_FROM` doit être celle de la boîte `SMTP_USER`, ou un alias autorisé de cette boîte : la plupart
   des serveurs refusent sinon l'envoi (« 550 Sender address is not allowed »).
@@ -188,7 +198,26 @@ toute lecture (le message nomme la variable, jamais sa valeur).
 - Utiliser une **boîte dédiée** à la veille (ex. `veille@wise-associates.fr`) : la limite horaire est celle de la
   boîte, une boîte partagée bloquerait aussi le courrier de ses utilisateurs.
 
-## Mise en production (GitHub Actions)
+## Mise en production (VPS)
+
+La veille tourne sur le serveur de MyBestConsultant, dans un conteneur Docker toujours lancé qui fait lui-même ses
+passages planifiés ([docs/adr/0010-vps-planification-nestjs.md](docs/adr/0010-vps-planification-nestjs.md)).
+Installation, bascule depuis GitHub Actions, exploitation et dépannage :
+**[docs/deploiement-vps.md](docs/deploiement-vps.md)**.
+
+- Nouvelle version : fusion dans `main`, puis GitHub → Actions → **« Déployer sur le VPS »** (vérification, image,
+  envoi par SSH à `deploy/veille-deploy.sh`, qui remet la version précédente si la nouvelle ne démarre pas).
+- Passage tout de suite, essai, journal, retour arrière : guide, partie 5.
+- Codes de sortie d'un passage lancé par `node dist/main.js` : 0, passage complet ; 1, passage interrompu avant
+  l'enregistrement de l'état, ou un autre passage était en cours ; 3, état enregistré mais un envoi ou la lecture de la
+  boîte AO a échoué.
+- Le workflow `Vérifications` lance types, tests, compilation et `npm audit` à chaque poussée.
+
+## Ancienne mise en production (GitHub Actions, jusqu'à la bascule)
+
+Le workflow `Veille quotidienne` reste dans le dépôt jusqu'à une semaine après la bascule sur le VPS (guide, partie 4),
+puis il est retiré. **Ne jamais le réactiver après la bascule** : il repartirait de l'état ancien de la branche
+`veille-etat` et renverrait des offres. Mise en place d'origine, pour mémoire :
 
 1. Pousser ce dépôt sur GitHub (dépôt privé de l'organisation).
 2. Dans **Settings → Secrets and variables → Actions**, créer les secrets `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
@@ -214,28 +243,28 @@ Le workflow a quatre jobs :
   MyBestConsultant refuse ou ne répond pas. Toutes les personnes qui suivent le dépôt sont prévenues, et le ticket
   renvoie au journal de l'exécution. Le fermer une fois corrigé.
 
-Codes de sortie du programme : 0, passage complet ; 1, passage interrompu avant l'enregistrement de l'état ; 3, état
-enregistré mais un envoi a échoué (offres ou récapitulatif). Avec le code 3, le workflow pousse quand même l'état,
-pour que les offres déjà envoyées ne repartent pas, puis ouvre le ticket.
-
-Le workflow `Vérifications` lance types, tests, compilation et `npm audit` à chaque poussée.
+Avec le code de sortie 3, le workflow pousse quand même l'état, pour que les offres déjà envoyées ne repartent pas,
+puis ouvre le ticket.
 
 ## État de la veille
 
-`etat.json` (branche `veille-etat`) retient, pour chaque source, les identifiants déjà envoyés (ou écartés) et la
+`etat.json` (sur le VPS : `/opt/veille-marches-emplois/donnees/etat.json` ; avant la bascule : branche `veille-etat`)
+retient, pour chaque source, les identifiants déjà envoyés (ou écartés) et la
 date à laquelle leur présence a été notée (rafraîchie au plus une fois par mois), le nombre d'annonces de référence,
 ainsi que les procédures d'appel d'offres déjà envoyées. Une annonce absente de sa source depuis 90 à 120 jours est
 oubliée. Il garde aussi (`settings`) la dernière version des réglages lue dans MyBestConsultant, revalidée avant d'être
-utilisée quand il ne répond pas. Chaque passage ajoute un commit : l'historique montre l'état de n'importe quel jour.
+utilisée quand il ne répond pas. Une copie par jour est gardée 30 jours dans `historique/`, à côté du fichier ; pendant
+un passage, `etat.json.lock` empêche un second passage de démarrer. Modifier le fichier se fait conteneur arrêté
+(guide du VPS, partie 6).
 
-- **Renvoyer toutes les offres d'une source** : supprimer sa clé dans `sources` (commit sur `veille-etat`).
+- **Renvoyer toutes les offres d'une source** : supprimer sa clé dans `sources`.
 - **Accepter une baisse durable** du nombre d'offres (alerte quotidienne alors que la source va bien) : remplacer son
   `lastCount` par le nombre actuel.
-- **Ne jamais supprimer la branche**, ni changer l'`id` d'une source (code ou réglages), ni la supprimer dans les
+- **Ne jamais supprimer le fichier**, ni changer l'`id` d'une source (code ou réglages), ni la supprimer dans les
   réglages pour la recréer sous un autre identifiant (la désactiver plutôt) : toutes ses offres en ligne repartiraient
   vers la boîte AO.
 - Un fichier abîmé arrête la veille avec un message explicite plutôt que de tout oublier en silence : le corriger, ou
-  revenir au commit précédent de la branche.
+  reprendre la copie d'un jour précédent dans `historique/` (guide du VPS, partie 6).
 
 ## Maintenance
 
@@ -251,6 +280,9 @@ utilisée quand il ne répond pas. Chaque passage ajoute un commit : l'historiqu
 | Avis officiel en PDF joint, lien du dossier de consultation | `src/tenders/notice-pdf.ts` ; adresses : `boampNoticePdfUrl`, `boampDocumentsUrl` (`src/sources/boamp.source.ts`), `tedNoticeToListing` (`src/sources/ted.source.ts`) |
 | Récapitulatif de l'équipe | `src/digest/digest.ts` |
 | Calcul des nouveautés, ordre d'envoi, alertes de volume | `src/state/run-state.ts` |
+| Heures des passages planifiés | `MORNING_RUN`, `DAY_RUNS` de `src/run/veille-scheduler.ts` |
+| Alerte d'échec d'un passage | `src/digest/alert-email.ts`, `src/run/veille-runner.ts` |
+| Serveur, déploiement, secrets de production | [docs/deploiement-vps.md](docs/deploiement-vps.md), `deploy/` |
 | Valeurs du périmètre informatique (codes CPV, expressions, sigles) | admin de MyBestConsultant, « Veille » → Filtre informatique |
 | Mots-clés des appels d'offres, tous les acheteurs, infrastructure seule | admin de MyBestConsultant, « Veille » → Mots-clés des appels d'offres |
 | Recherche chez tous les acheteurs (requêtes BOAMP / TED) | `src/tenders/all-buyers.ts`, `boampAllBuyersWheres`, `tedAllBuyersQueries` |
@@ -264,8 +296,11 @@ comparer avec ce qu'attend son fichier dans `src/sources/` (sélecteurs, champs 
 
 ```
 src/
-  main.ts                 point d'entrée (contexte Nest autonome, codes de sortie)
+  main.ts                 point d'entrée : passages planifiés (--schedule), un passage, ou un essai (--dry-run)
   app.module.ts           assemblage des services
+  run/veille-scheduler.ts heures des passages planifiés (5 h, 9 h, 13 h, 17 h UTC), arrêt propre du conteneur
+  run/veille-runner.ts    déroulé d'un passage : verrou, passage, boîte AO de MyBestConsultant, alerte en cas d'échec
+  run/ao-inbox-sync.ts    lecture de la boîte AO par MyBestConsultant après le passage
   scan.service.ts         un passage : lire, comparer, envoyer chaque offre, enregistrer, récapituler
   settings/               réglages du passage (MyBestConsultant, dernière version connue, config/defaults.json)
   organisations.ts        organismes suivis, tirés des réglages
@@ -275,13 +310,15 @@ src/
   tenders/all-buyers.ts   recherche chez tous les acheteurs (mots-clés, classification)
   tenders/notice-pdf.ts   avis officiel en PDF (BOAMP, TED), téléchargé et joint à l'e-mail de l'offre
   sources/                une source par fichier (BOAMP, TED, Choisir le service public, sites carrières)
-  state/                  calcul des nouveautés (règles pures) et fichier d'état
+  state/                  calcul des nouveautés (règles pures), fichier d'état, son verrou et son historique
   digest/                 e-mail d'une offre, récapitulatif, mise en forme commune
   mail/                   envoi SMTP (nodemailer, une connexion, une offre par seconde)
   http/                   accès HTTP commun (délai, taille maximale, nouvelle tentative, User-Agent)
   text.ts                 conversion des descriptions HTML en texte
 config/defaults.json      réglages du dépôt (premier chargement de MyBestConsultant, tests, dernier recours)
+Dockerfile, deploy/       image, conteneur et script de déploiement du VPS (docs/deploiement-vps.md)
 ```
 
-Choix techniques (NestJS autonome, `tsc`, `node:test`, état sur branche) :
-[docs/adr/0002-nest-autonome-etat-sur-branche.md](docs/adr/0002-nest-autonome-etat-sur-branche.md).
+Choix techniques (NestJS autonome, `tsc`, `node:test`) :
+[docs/adr/0002-nest-autonome-etat-sur-branche.md](docs/adr/0002-nest-autonome-etat-sur-branche.md) ; VPS, planificateur
+et état sur disque : [docs/adr/0010-vps-planification-nestjs.md](docs/adr/0010-vps-planification-nestjs.md).

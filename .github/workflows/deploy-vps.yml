@@ -1,0 +1,105 @@
+# Mise en service sur le VPS (ADR 0010, docs/deploiement-vps.md).
+#
+# Lancé à la main seulement : onglet Actions → « Déployer sur le VPS » → Run workflow, branche main. Vérifie le code,
+# construit l'image, l'envoie au serveur et remplace le conteneur (deploy/veille-deploy.sh). Retour arrière : sur le
+# serveur, « sudo -u deploy veille-deploy rollback <commit> » (images des 5 dernières versions gardées).
+#
+# Deux jobs : « verify » exécute le code du dépôt et de ses dépendances (npm ci, tests) sans aucun secret ;
+# « deploy » détient la clé SSH et n'exécute aucun code du dépôt sur la machine de GitHub (le build a lieu dans un
+# conteneur Docker, qui n'a accès ni aux fichiers ni aux variables du job).
+
+name: Déployer sur le VPS
+
+on:
+  workflow_dispatch:
+
+# Un déploiement à la fois, sans jamais en annuler un en cours (il serait coupé au milieu du remplacement).
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Contrôles
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+        run: |
+          # Lancé depuis une autre branche, le workflow mettrait cette branche en service (le serveur la refuserait).
+          if [[ $GITHUB_REF != refs/heads/main ]]; then
+            echo "::error::Lancez ce workflow depuis la branche main (branche choisie : $GITHUB_REF_NAME)."
+            exit 1
+          fi
+          if [[ -z $VPS_HOST ]]; then
+            echo "::error::Variable de dépôt VPS_HOST absente : serveur pas encore configuré (docs/deploiement-vps.md, partie 3). Rien n'a été modifié."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Commit à déployer
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # --ignore-scripts : aucune dépendance n'a de script d'installation légitime ; on n'en exécute aucun.
+      - run: npm ci --ignore-scripts
+      - name: Vérification (types et tests)
+        run: |
+          npm run typecheck
+          npm test
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-24.04
+    # Clé SSH : environnement « production », limité à la branche main (docs/deploiement-vps.md, partie 3).
+    environment: production
+    # Le serveur refuse tout de suite un déploiement pendant un passage ; s'il en commence un juste après, le conteneur
+    # attend sa fin (35 minutes au plus) avant d'être remplacé.
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+
+      - name: Image
+        env:
+          COMMIT: ${{ needs.verify.outputs.commit }}
+        run: docker build --tag "veille-marches-emplois:$COMMIT" .
+
+      - name: Envoi au serveur et remplacement du conteneur
+        env:
+          COMMIT: ${{ needs.verify.outputs.commit }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        # La clé ne peut lancer que veille-deploy sur le serveur (command= dans authorized_keys). L'empreinte du serveur
+        # est vérifiée (known_hosts) : pas de connexion à un serveur qui se ferait passer pour lui.
+        run: |
+          if [[ -z $VPS_SSH_KEY || -z $VPS_SSH_KNOWN_HOSTS ]]; then
+            echo "::error::Secrets VPS_SSH_KEY ou VPS_SSH_KNOWN_HOSTS absents de l'environnement production (docs/deploiement-vps.md, partie 3). Rien n'a été déployé."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          (umask 077 && printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key)
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          docker save "veille-marches-emplois:$COMMIT" | gzip -1 |
+            ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 \
+              "deploy@$VPS_HOST" deploy "$COMMIT"

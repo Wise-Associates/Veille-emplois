@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { CLOCK, type Clock } from './clock.js'
-import { APP_CONFIG, type AppConfig } from './config.js'
+import { APP_CONFIG, type AppConfig, type DigestMode } from './config.js'
 import { parisDay } from './dates.js'
 import { needsAttention, renderDigest, type DeliverySummary } from './digest/digest.js'
 import type { EmailAttachment, RenderedEmail } from './digest/format.js'
@@ -69,7 +69,12 @@ export class ScanService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async run(): Promise<DeliverySummary> {
+  /**
+   * `digestMode` : celui du passage planifié (le passage de 5 h envoie toujours le récapitulatif, veille-scheduler.ts) ;
+   * à défaut, celui de la configuration (DIGEST_MODE).
+   */
+  async run(options: { digestMode?: DigestMode } = {}): Promise<DeliverySummary> {
+    const digestMode = options.digestMode ?? this.config.digestMode
     const startedAt = this.clock.now().getTime()
     const state = await this.store.load()
     // Réglages du passage (MyBestConsultant, sinon dernière version connue, sinon ceux du dépôt) : organismes suivis,
@@ -153,7 +158,7 @@ export class ScanService {
     const handled = new Set([...sent, ...outdated])
     const unsent = report.newListings.filter((listing) => !handled.has(listing))
     // La version des réglages lue dans MyBestConsultant est gardée pour un passage où il ne répondrait pas.
-    await this.store.save(forgetUnsent({ ...next, settings: chosen.snapshot }, unsent, state))
+    const saved = await this.store.save(forgetUnsent({ ...next, settings: chosen.snapshot }, unsent, state))
     this.logger.log(
       `${sent.length} offre(s) envoyée(s) à la boîte AO, ${outdated.length} échue(s) écartée(s), ${unsent.length} en attente ; état enregistré.`,
     )
@@ -169,6 +174,7 @@ export class ScanService {
       failures: report.failures,
       warnings: [
         ...settingsWarnings,
+        ...(saved.warning ? [{ label: "Fichier d'état", message: saved.warning }] : []),
         ...report.warnings,
         ...details.warnings(),
         ...pdfs.warnings(),
@@ -180,7 +186,7 @@ export class ScanService {
     let digestError: string | null = null
     // Passages de la journée (DIGEST_MODE=problems) : récapitulatif seulement s'il y a un point à vérifier ; celui du
     // matin l'envoie toujours, son arrivée prouve que la veille tourne.
-    if (this.config.digestMode === 'problems' && !needsAttention(summary)) {
+    if (digestMode === 'problems' && !needsAttention(summary)) {
       this.logger.log(`Récapitulatif non envoyé (DIGEST_MODE=problems, aucun point à vérifier) : « ${digest.subject} ».`)
     } else {
       try {

@@ -8,6 +8,9 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
 - Imports relatifs **avec l'extension `.js`** (ESM `nodenext`), `import type` pour les types (`verbatimModuleSyntax`).
 - `npm run typecheck`, `npm test` (compile par `tsc` dans `dist-test/` puis `node --test`), `npm run build`,
   `npm run veille:essai` (lecture réelle des sources, sans envoi ni enregistrement : la vérification de bout en bout).
+- Production : **VPS de MyBestConsultant** (ADR 0010, guide `docs/deploiement-vps.md`), conteneur toujours lancé
+  (`node dist/main.js --schedule`, planificateur `@nestjs/schedule`). Image : `Dockerfile` ; conteneur :
+  `deploy/compose.yml` ; déploiement : workflow « Déployer sur le VPS » → `deploy/veille-deploy.sh`.
 - Tests : `node:test` + `node:assert/strict`, fichiers `*.spec.ts` à côté du code, noms en français. Ne pas passer à
   Vitest ni Jest sans relire l'ADR 0002 (plantage de npm 10.9, Node 24.9+ pour Jest).
 - Dépendances figées (`--save-exact`), versions publiées depuis au moins deux semaines.
@@ -59,11 +62,34 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
   (`src/it-scope.ts`) ou de la reconnaissance d'acheteur (`src/tenders/buyer-match.ts`) s'accompagne d'un cas dans
   leur `*.spec.ts` (y compris le faux positif ou l'homonyme à écarter) et d'une vérification sur les offres réelles
   (`npm run veille:essai`). Une offre écartée est retenue comme vue : élargir ne la renverra pas.
-- Le workflow `veille-quotidienne.yml` n'utilise que des secrets (dont `VEILLE_CONFIG_URL`, `VEILLE_CONFIG_TOKEN`,
+- **VPS** (ADR 0010) :
+  - heures des passages : `MORNING_RUN` / `DAY_RUNS` de `src/run/veille-scheduler.ts`, en UTC ; le passage du matin
+    envoie toujours le récapitulatif. Un changement d'heure se reporte dans le README et le guide.
+  - un passage, planifié ou à la main (`docker exec veille node dist/main.js`), passe par `VeilleRunner` : verrou du
+    fichier d'état (`acquireRunLock`, jamais deux passages), lecture de la boîte AO, alerte e-mail en cas d'échec. Ne
+    jamais lancer `ScanService.run()` en dehors de lui en production.
+  - à l'arrêt du conteneur, le passage en cours va au bout (`beforeApplicationShutdown`) : ne pas baisser
+    `stop_grace_period` de `deploy/compose.yml` sous la durée maximale d'un passage (budget de 25 minutes, plus
+    l'enregistrement, le récapitulatif et un appel à MyBestConsultant).
+  - `deploy/compose.yml` : jamais de `ports:`, de privilège ni de volume en plus ; `check_compose` de
+    `deploy/veille-deploy.sh` refuse tout réglage hors de sa liste (changer l'un oblige à changer l'autre, après
+    relecture). Les chemins du serveur viennent de ce script (une seule définition). Un changement de
+    `veille-deploy.sh` doit être réinstallé sur le serveur (guide, partie 5). Le conteneur tourne sous l'uid 10001
+    (Dockerfile, compose.yml, `APP_USER` du script : les trois ensemble).
+  - le dossier d'état est écrit par le conteneur : sur le serveur, jamais de `sudo cp` / `sudo install` depuis ce
+    dossier (liens symboliques) ; `veille-deploy restore <jour>` pour l'historique, `sudoedit` pour une modification.
+  - la connexion SMTP se ferme dans `Mailer.onApplicationShutdown`, jamais dans `onModuleDestroy` (appelé par NestJS
+    avant `beforeApplicationShutdown`, il couperait l'envoi d'un passage en cours).
+  - nouvelle variable d'environnement : `.env.example`, `src/config.ts` et la liste du guide (2.4) ; un humain
+    l'ajoute à `/etc/veille-marches-emplois/veille.env` avant le déploiement du code qui la lit.
+  - SMTP sur le port 587 : Hetzner bloque par défaut les ports sortants 25 et 465.
+- Le workflow `veille-quotidienne.yml` (ancien fonctionnement, retiré une semaine après la bascule sur le VPS ; ne
+  jamais le réactiver ensuite) n'utilise que des secrets (dont `VEILLE_CONFIG_URL`, `VEILLE_CONFIG_TOKEN`,
   `AO_SYNC_URL` et `AO_SYNC_TOKEN`),
   la variable `MAX_OFFER_EMAILS_PER_RUN`, l'entrée booléenne `essai` et `DIGEST_MODE` (calculé d'après l'horaire du
   passage), tous passés par `env:` (jamais `${{ }}` dans un script). Changer l'horaire de 5 h oblige à changer aussi l'expression de `DIGEST_MODE`.
   Le job qui exécute le code (`passage`) garde un jeton en lecture seule ; seul `enregistrer`, qui n'exécute que git,
   peut écrire. `AO_SYNC_TOKEN` (le `CRON_SECRET` de MyBestConsultant) n'est donné qu'au job `synchroniser`, qui
-  n'exécute que curl (ADR 0008) : jamais au job `passage`, dont les dépendances npm le liraient. Actions épinglées
-  par SHA (version en commentaire).
+  n'exécute que curl (ADR 0008) : jamais au job `passage`, dont les dépendances npm le liraient. Sur le VPS, ce secret
+  est dans le conteneur (risque accepté, ADR 0010). Actions épinglées par SHA (version en commentaire), dans tous les
+  workflows ; `deploy-vps.yml` : le job qui détient la clé SSH n'exécute aucun code du dépôt hors du build Docker.

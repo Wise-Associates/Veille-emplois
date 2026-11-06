@@ -1,0 +1,13 @@
+# Seuls le code, la configuration du dépôt et les fichiers de dépendances entrent dans l'image (Dockerfile). Jamais de
+# secret (.env) ni d'état local.
+node_modules
+dist
+dist-test
+etat
+.env
+.env.*
+.git
+.github
+docs
+deploy
+*.log

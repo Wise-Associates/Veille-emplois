@@ -1,0 +1,50 @@
+# Conteneur de la veille sur le VPS (ADR 0010), lancé par deploy/veille-deploy.sh, qui donne l'image et les chemins du
+# serveur (IMAGE_TAG, VEILLE_ENV_FILE, VEILLE_DATA) : ne pas lancer docker compose à la main sur ce fichier.
+# Sur le serveur de MyBestConsultant, à côté de ses conteneurs (mbc-*), sans rien partager avec eux.
+# Guide : docs/deploiement-vps.md.
+
+services:
+  veille:
+    image: veille-marches-emplois:${IMAGE_TAG:?IMAGE_TAG manquant}
+    container_name: veille
+    # Redémarre après une panne ou un redémarrage du serveur ; un « docker stop » à la main est respecté.
+    restart: unless-stopped
+    # Processus init (tini) : transmet le signal d'arrêt à Node et récupère les processus terminés.
+    init: true
+    # Utilisateur sans compte sur le serveur, propriétaire de /data (même valeur que le Dockerfile et APP_USER de
+    # deploy/veille-deploy.sh, qui refuse toute autre valeur).
+    user: "10001:10001"
+    # Secrets et réglages (SMTP, boîte AO, MyBestConsultant) : fichier du serveur, jamais dans le dépôt ni l'image.
+    env_file: ${VEILLE_ENV_FILE:?VEILLE_ENV_FILE manquant}
+    environment:
+      STATE_FILE: /data/etat.json
+    # Fichier d'état, son verrou et son historique quotidien (src/state/state-store.ts).
+    volumes:
+      - ${VEILLE_DATA:?VEILLE_DATA manquant}:/data
+    # Durcissement : système de fichiers en lecture seule (sauf /data et /tmp), aucun privilège, aucun port publié.
+    # Ne jamais ajouter de « ports: » : la veille n'écoute rien, et Docker contournerait le pare-feu (ufw). Un réglage
+    # en plus (ports, privilège, volume, réseau de l'hôte…) est refusé par check_compose de deploy/veille-deploy.sh.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 128
+    # Arrêt (déploiement, redémarrage) : un passage en cours va au bout avant (veille-scheduler.ts) : 25 minutes d'envoi
+    # au plus, puis l'enregistrement, le récapitulatif et un dernier appel à MyBestConsultant (5 minutes au plus).
+    stop_grace_period: 35m
+    # Le fichier n'existe qu'une fois la planification en place (configuration lue, passages enregistrés) : un
+    # déploiement dont la configuration est invalide échoue ici, et la version précédente est remise.
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/veille-planifiee"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"

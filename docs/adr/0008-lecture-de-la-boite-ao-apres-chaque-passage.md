@@ -1,6 +1,7 @@
 # 0008 — Lecture de la boîte AO par MyBestConsultant après chaque passage
 
-Date : 1er novembre 2026 · Statut : acceptée (complète l'ADR 0003)
+Date : 1er novembre 2026 · Statut : acceptée (complète l'ADR 0003) ; sur le VPS, l'appel est fait par l'application
+elle-même (`src/run/ao-inbox-sync.ts`, ADR 0010), plus par un job à part
 
 ## Contexte
 

@@ -36,6 +36,18 @@ export interface AppConfig {
   mail: MailConfig | null
   /** Réglages lus dans MyBestConsultant (ADR 0005) ; null : ceux du dépôt (config/defaults.json). */
   settings: SettingsSourceConfig | null
+  /**
+   * Lecture de la boîte AO par MyBestConsultant juste après l'envoi des offres (ADR 0008, faite par l'application sur le
+   * VPS : ADR 0010) ; null : la boîte est lue par le passage planifié de MyBestConsultant.
+   */
+  aoSync: AoSyncConfig | null
+}
+
+export interface AoSyncConfig {
+  /** Route de lecture de la boîte AO : https://<site MyBestConsultant>/api/cron/ao-inbox. */
+  url: string
+  /** CRON_SECRET de MyBestConsultant, jamais journalisé. */
+  token: string
 }
 
 export interface SettingsSourceConfig {
@@ -75,12 +87,17 @@ const settingsUrl = z.string().refine((value) => {
   return url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))
 }, 'adresse https attendue (http seulement pour localhost)')
 
+/** https seulement : le secret de MyBestConsultant ne circule jamais en clair. */
+const httpsUrl = z.string().refine((value) => URL.canParse(value) && new URL(value).protocol === 'https:', 'adresse https attendue')
+
 const baseSchema = z.object({
   STATE_FILE: z.string().trim().min(1).default('etat/etat.json'),
   VEILLE_CONFIG_URL: optionalText.pipe(settingsUrl.optional()),
   VEILLE_CONFIG_TOKEN: optionalText.pipe(z.string().min(32, '32 caractères au moins').optional()),
   MAX_OFFER_EMAILS_PER_RUN: optionalInt(200, 1, 2000),
   DIGEST_MODE: z.preprocess((value) => (value === '' ? undefined : value), z.enum(['always', 'problems']).default('always')),
+  AO_SYNC_URL: optionalText.pipe(httpsUrl.optional()),
+  AO_SYNC_TOKEN: optionalText.pipe(z.string().min(16, '16 caractères au moins').optional()),
 })
 
 function describeIssues(error: z.ZodError): string {
@@ -94,8 +111,13 @@ export function loadConfig(env: Record<string, string | undefined>, dryRun: bool
   const { VEILLE_CONFIG_URL: url, VEILLE_CONFIG_TOKEN: token } = base.data
   // Adresse sans jeton : la veille s'arrête ici plutôt que de tourner en silence sur les réglages du dépôt.
   if (url && !token) throw new Error('Configuration invalide — VEILLE_CONFIG_TOKEN : obligatoire avec VEILLE_CONFIG_URL')
+  // Les deux ou aucune : une seule des deux est une erreur de saisie, signalée plutôt qu'ignorée.
+  const { AO_SYNC_URL: syncUrl, AO_SYNC_TOKEN: syncToken } = base.data
+  if (syncUrl && !syncToken) throw new Error('Configuration invalide — AO_SYNC_TOKEN : obligatoire avec AO_SYNC_URL')
+  if (syncToken && !syncUrl) throw new Error('Configuration invalide — AO_SYNC_URL : obligatoire avec AO_SYNC_TOKEN')
   const common = {
     settings: url && token ? { url, token } : null,
+    aoSync: syncUrl && syncToken ? { url: syncUrl, token: syncToken } : null,
     stateFile: base.data.STATE_FILE,
     dryRun,
     maxOfferEmailsPerRun: base.data.MAX_OFFER_EMAILS_PER_RUN,

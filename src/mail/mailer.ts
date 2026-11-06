@@ -1,4 +1,4 @@
-import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common'
+import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common'
 import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer'
 import { APP_CONFIG, type AppConfig, type MailConfig } from '../config.js'
 import type { RenderedEmail } from '../digest/format.js'
@@ -65,7 +65,7 @@ export function isMessageRejection(error: unknown): boolean {
  * envoie des centaines d'offres, et les serveurs d'envoi bloquent les rafales.
  */
 @Injectable()
-export class Mailer implements OnModuleDestroy {
+export class Mailer implements OnApplicationShutdown {
   private transport: Transporter | null = null
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
@@ -83,9 +83,27 @@ export class Mailer implements OnModuleDestroy {
     await this.send(email, (mail) => mail.digestTo, 'MAIL_TO')
   }
 
-  onModuleDestroy(): void {
+  /** L'alerte d'échec d'un passage, vers l'équipe (MAIL_TO) : elle remplace le ticket du workflow GitHub. */
+  async sendAlert(email: RenderedEmail): Promise<void> {
+    await this.send(email, (mail) => mail.digestTo, 'MAIL_TO')
+  }
+
+  /**
+   * Ferme la connexion SMTP à la fin d'un passage : entre deux passages planifiés (quatre heures), le serveur d'envoi la
+   * couperait de toute façon. Le passage suivant en ouvre une nouvelle.
+   */
+  close(): void {
     this.transport?.close()
     this.transport = null
+  }
+
+  /**
+   * Dernière étape de l'arrêt, après l'attente du passage en cours (VeilleScheduler.beforeApplicationShutdown) : fermée
+   * plus tôt (onModuleDestroy, appelé avant), la connexion ferait échouer les offres encore en file et interromprait
+   * l'envoi au milieu du passage.
+   */
+  onApplicationShutdown(): void {
+    this.close()
   }
 
   private async send(

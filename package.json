@@ -18,6 +18,7 @@
   "dependencies": {
     "@nestjs/common": "12.1.2",
     "@nestjs/core": "12.1.2",
+    "@nestjs/schedule": "12.0.2",
     "cheerio": "1.2.0",
     "nodemailer": "10.0.16",
     "reflect-metadata": "0.2.2",

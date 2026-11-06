@@ -26,7 +26,15 @@ describe('configuration', () => {
   })
 
   it('n\'exige pas la messagerie pour un essai', () => {
-    assert.deepEqual(loadConfig({}, true), { settings: null, stateFile: 'etat/etat.json', dryRun: true, maxOfferEmailsPerRun: 200, digestMode: 'always', mail: null })
+    assert.deepEqual(loadConfig({}, true), {
+      settings: null,
+      aoSync: null,
+      stateFile: 'etat/etat.json',
+      dryRun: true,
+      maxOfferEmailsPerRun: 200,
+      digestMode: 'always',
+      mail: null,
+    })
   })
 
   it('lit la messagerie, la boîte AO et les destinataires du récapitulatif', () => {
@@ -59,6 +67,20 @@ describe('configuration', () => {
     assert.equal(loadConfig({ DIGEST_MODE: 'problems' }, true).digestMode, 'problems')
     assert.equal(loadConfig({ DIGEST_MODE: '' }, true).digestMode, 'always')
     assert.throws(() => loadConfig({ DIGEST_MODE: 'jamais' }, true), /DIGEST_MODE/)
+  })
+
+  it('lit la route de lecture de la boîte AO de MyBestConsultant et son secret, toujours ensemble, sans afficher le secret', () => {
+    const token = 's'.repeat(16)
+    assert.deepEqual(loadConfig({ AO_SYNC_URL: 'https://mbc.exemple.test/api/cron/ao-inbox', AO_SYNC_TOKEN: token }, true).aoSync, {
+      url: 'https://mbc.exemple.test/api/cron/ao-inbox',
+      token,
+    })
+    assert.equal(loadConfig({ AO_SYNC_URL: '', AO_SYNC_TOKEN: '' }, true).aoSync, null, 'non définis : la boîte est lue par le passage de MyBestConsultant')
+    assert.throws(() => loadConfig({ AO_SYNC_URL: 'https://mbc.exemple.test/api/cron/ao-inbox' }, true), /AO_SYNC_TOKEN : obligatoire avec AO_SYNC_URL/)
+    assert.throws(() => loadConfig({ AO_SYNC_TOKEN: token }, true), /AO_SYNC_URL : obligatoire avec AO_SYNC_TOKEN/)
+    assert.throws(() => loadConfig({ AO_SYNC_URL: 'http://mbc.exemple.test/api/cron/ao-inbox', AO_SYNC_TOKEN: token }, true), /AO_SYNC_URL/)
+    assert.throws(() => loadConfig({ AO_SYNC_URL: 'https://mbc.exemple.test/api/cron/ao-inbox', AO_SYNC_TOKEN: 'court-fictif' }, true), (error: Error) =>
+      /16 caractères/.test(error.message) && !error.message.includes('court-fictif'))
   })
 
   it('refuse un plafond d\'envoi aberrant', () => {
