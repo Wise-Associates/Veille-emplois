@@ -23,6 +23,8 @@ import {
 } from './state/run-state.js'
 import { StateStore } from './state/state-store.js'
 import { NoticePdfReader } from './tenders/notice-pdf.js'
+import { buildRunReport } from './run/source-report.js'
+import { SourceReportSender } from './run/source-report-sender.js'
 
 /**
  * Passage terminé avec l'état enregistré, mais un envoi a échoué (offres ou récapitulatif) : le workflow doit
@@ -65,6 +67,7 @@ export class ScanService {
     private readonly store: StateStore,
     private readonly mailer: Mailer,
     private readonly noticePdfs: NoticePdfReader,
+    private readonly reports: SourceReportSender,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
@@ -87,10 +90,12 @@ export class ScanService {
     const outcomes: SourceOutcome[] = []
     // Une source après l'autre : quelques minutes au total, et jamais plusieurs requêtes simultanées vers un même site.
     let outOfScope = 0
+    const outOfScopeBySource = new Map<string, number>()
     for (const source of sources) {
       const read = await this.read(source, state, itRules)
       outcomes.push(read.outcome)
       outOfScope += read.outOfScopeNew
+      outOfScopeBySource.set(source.id, read.outOfScopeNew)
     }
 
     const today = parisDay(this.clock.now())
@@ -127,13 +132,13 @@ export class ScanService {
       const { complete, attachments } = prepared
       try {
         try {
-          await this.mailer.sendOffer(renderOfferEmail(complete, organisations, attachments))
+          await this.mailer.sendOffer(renderOfferEmail(complete, organisations, attachments), listing.sourceId)
         } catch (error) {
           // Message refusé pour lui-même alors qu'il portait l'avis PDF (taille, filtre du serveur) : renvoyé aussitôt
           // sans lui, sinon l'offre repartirait chaque passage avec le même PDF et serait refusée chaque fois.
           if (!attachments.length || !isMessageRejection(error)) throw error
           this.logger.warn(`Offre ${listing.id} refusée avec son avis PDF, renvoyée sans lui : ${message(error)}`)
-          await this.mailer.sendOffer(renderOfferEmail(complete, organisations))
+          await this.mailer.sendOffer(renderOfferEmail(complete, organisations), listing.sourceId)
           sentWithoutPdf.push(`« ${listing.title.slice(0, 80)} » (${listing.organisationId}, ${listing.id}) : ${message(error)}`)
         }
       } catch (error) {
@@ -161,6 +166,31 @@ export class ScanService {
       `${sent.length} offre(s) envoyée(s) à la boîte AO, ${outdated.length} échue(s) écartée(s), ${unsent.length} en attente ; état enregistré.`,
     )
 
+    const warnings = [
+      ...settingsWarnings,
+      ...(saved.warning ? [{ label: "Fichier d'état", message: saved.warning }] : []),
+      ...report.warnings,
+      ...readers.details.warnings(),
+      ...readers.pdfs.warnings(),
+      ...readers.pdfDeadlines.warnings(),
+      ...readers.pdfWithoutDeadline.warnings(),
+      ...sentWithoutPdf.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Avis PDF refusé avec le message, offre envoyée sans lui : ${offer}` })),
+      ...refused.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Offre refusée, retentée au prochain passage : ${offer}` })),
+    ]
+    // Suivi des sources dans MyBestConsultant (ADR 0012) : après l'enregistrement de l'état, avant le récapitulatif,
+    // qui signale un rapport non transmis.
+    const reportWarning = await this.sendRunReport({
+      startedAt: new Date(startedAt),
+      finishedAt: this.clock.now(),
+      settings: chosen,
+      outcomes,
+      outOfScopeBySource,
+      newListings: report.newListings,
+      sent,
+      outdated,
+      deliveryError,
+      warnings,
+    })
     const summary: DeliverySummary = {
       sent,
       outdated: outdated.length,
@@ -170,17 +200,7 @@ export class ScanService {
       timeBudgetMinutes: RUN_TIME_BUDGET_MS / 60_000,
       deliveryError,
       failures: report.failures,
-      warnings: [
-        ...settingsWarnings,
-        ...(saved.warning ? [{ label: "Fichier d'état", message: saved.warning }] : []),
-        ...report.warnings,
-        ...readers.details.warnings(),
-        ...readers.pdfs.warnings(),
-        ...readers.pdfDeadlines.warnings(),
-        ...readers.pdfWithoutDeadline.warnings(),
-        ...sentWithoutPdf.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Avis PDF refusé avec le message, offre envoyée sans lui : ${offer}` })),
-        ...refused.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Offre refusée, retentée au prochain passage : ${offer}` })),
-      ],
+      warnings: reportWarning ? [...warnings, reportWarning] : warnings,
     }
     const digest = renderDigest(summary, today, organisations)
     let digestError: string | null = null
@@ -208,6 +228,21 @@ export class ScanService {
       )
     }
     return summary
+  }
+
+  /**
+   * Rapport du passage pour le suivi des sources de MyBestConsultant. Un envoi impossible ne fait pas échouer le passage
+   * (les offres sont parties, l'état est enregistré) : il devient un point à vérifier du récapitulatif.
+   */
+  private async sendRunReport(facts: Parameters<typeof buildRunReport>[0]): Promise<{ label: string; message: string } | null> {
+    try {
+      const sentReport = await this.reports.send(buildRunReport(facts))
+      if (sentReport) this.logger.log('Rapport du passage transmis à MyBestConsultant (suivi des sources).')
+      return null
+    } catch (error) {
+      this.logger.warn(`Rapport du passage non transmis à MyBestConsultant : ${message(error)}`)
+      return { label: 'Suivi des sources (MyBestConsultant)', message: `Rapport du passage non transmis : ${message(error)}` }
+    }
   }
 
   /** Essai : affiche le récapitulatif et le premier e-mail d'offre, complété comme il le serait ; rien n'est envoyé. */

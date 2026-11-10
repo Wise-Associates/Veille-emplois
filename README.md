@@ -176,6 +176,13 @@ projets). `config/defaults.json` (réglages exportés le 27/10/2026, avec la rai
 sert à charger MyBestConsultant la première fois (`npm run veille:seed` de MyBestConsultant), aux tests et en dernier
 recours ; le garder valide (vérifié au démarrage et par `npm test`).
 
+**Suivi des sources** ([docs/adr/0012-suivi-des-sources-dans-mybestconsultant.md](docs/adr/0012-suivi-des-sources-dans-mybestconsultant.md)) :
+chaque e-mail d'offre porte l'identifiant de sa source (en-tête `X-Wise-Veille-Source`), et chaque passage réel envoie,
+après l'enregistrement de l'état, son rapport par source à `…/api/veille/runs` (même site et même jeton que les
+réglages). MyBestConsultant l'affiche en bas de `/admin/candidats/statistiques`. Un rapport non transmis est signalé
+dans le récapitulatif, sans faire échouer le passage ; un essai n'envoie rien. Mettre à jour MyBestConsultant avant
+ce projet.
+
 ## Configuration
 
 Variables d'environnement, toutes décrites dans [.env.example](.env.example) : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,

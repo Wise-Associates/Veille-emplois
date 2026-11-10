@@ -6,6 +6,7 @@ import { APP_CONFIG, loadConfig } from './config.js'
 import { HttpClient } from './http/http-client.js'
 import { Mailer } from './mail/mailer.js'
 import { AoInboxSync, SLEEP, type Sleep } from './run/ao-inbox-sync.js'
+import { SourceReportSender } from './run/source-report-sender.js'
 import { VeilleRunner } from './run/veille-runner.js'
 import { VeilleScheduler } from './run/veille-scheduler.js'
 import { ScanService } from './scan.service.js'
@@ -44,6 +45,7 @@ export class AppModule {
         StateStore,
         Mailer,
         NoticePdfReader,
+        SourceReportSender,
         ScanService,
         AoInboxSync,
         VeilleRunner,

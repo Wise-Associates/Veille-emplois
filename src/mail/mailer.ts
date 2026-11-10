@@ -50,6 +50,15 @@ export function messageContent(email: RenderedEmail): Pick<SendMailOptions, 'sub
 export const VEILLE_HEADER = 'X-Wise-Veille'
 
 /**
+ * Source de l'offre (identifiant des réglages : `boamp`, `csp-dgfip`…), lue par MyBestConsultant pour son suivi des
+ * sources (ADR 0012). Ne jamais le renommer sans changer les deux projets.
+ */
+export const VEILLE_SOURCE_HEADER = 'X-Wise-Veille-Source'
+
+/** Identifiant de source sûr dans un en-tête (clé des réglages ou d'une source intégrée). */
+const SOURCE_ID = /^[a-z0-9-]{1,50}$/
+
+/**
  * Refus définitif d'un message précis (contenu, taille : code 5xx après DATA), par opposition aux erreurs qui
  * touchent tous les envois (connexion, identifiants, expéditeur, quota ou refus temporaire 4xx) : le premier peut être
  * sauté pour envoyer les suivants, les autres doivent arrêter l'envoi.
@@ -72,10 +81,15 @@ export class Mailer implements OnApplicationShutdown {
 
   /**
    * Une offre, vers la boîte AO (OFFERS_TO). L'en-tête X-Wise-Veille fait afficher « Scraping » comme source dans la
-   * page AO de MyBestConsultant (reconnu seulement depuis une adresse de ses domaines).
+   * page AO de MyBestConsultant (reconnu seulement depuis une adresse de ses domaines) ; X-Wise-Veille-Source, la
+   * source de l'offre dans son suivi des sources.
    */
-  async sendOffer(email: RenderedEmail): Promise<void> {
-    await this.send(email, (mail) => mail.offersTo, 'OFFERS_TO', { [VEILLE_HEADER]: 'scraping' })
+  async sendOffer(email: RenderedEmail, sourceId: string): Promise<void> {
+    // Les identifiants des réglages ont déjà ce format (veille-settings.ts). Un autre ne bloque pas l'envoi de l'offre :
+    // elle part sans source, et MyBestConsultant la range sous « Source inconnue ».
+    const headers: Record<string, string> = { [VEILLE_HEADER]: 'scraping' }
+    if (SOURCE_ID.test(sourceId)) headers[VEILLE_SOURCE_HEADER] = sourceId
+    await this.send(email, (mail) => mail.offersTo, 'OFFERS_TO', headers)
   }
 
   /** Le récapitulatif, vers l'équipe (MAIL_TO). */
