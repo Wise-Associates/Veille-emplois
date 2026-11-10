@@ -44,7 +44,9 @@ mots-clés (SaaS, digitalisation, données, IA, TMA…, voir « Périmètre info
    appels d'offres de tous les acheteurs) : elles partent en trois passages, ou plus vite en relançant le workflow à
    la main.
 7. Une offre dont la date limite est déjà passée (souvent connue par la page de l'offre) n'est pas envoyée ; elle est
-   retenue comme traitée et comptée dans le récapitulatif.
+   retenue comme traitée et comptée dans le récapitulatif. Avis européen du BOAMP sans date limite dans l'API : celle
+   de ses données eForms ; appel d'offres encore sans date : celle écrite dans son avis officiel en PDF, lu pour cette
+   seule ligne (voir [docs/adr/0011-date-limite-des-avis-eforms-puis-pdf.md](docs/adr/0011-date-limite-des-avis-eforms-puis-pdf.md)).
 8. Une offre n'est retenue comme envoyée qu'une fois son e-mail accepté par le serveur : si le serveur refuse
    (quota, adresse), l'envoi s'arrête et le reste part au passage suivant ; s'il refuse un seul message (contenu),
    celui-ci est sauté, signalé, et retenté au passage suivant.
@@ -66,7 +68,8 @@ Le récapitulatif signale en tête les **points à vérifier** :
   jusqu'à ce que la source retrouve son volume ; pendant ce temps, rien n'est oublié de ce qu'elle avait montré ;
 - aucun appel d'offres depuis trois semaines (requête BOAMP / TED devenue invalide) ;
 - avis BOAMP au contenu illisible, offres envoyées sans le détail de leur page ou sans l'avis officiel en PDF
-  (téléchargement impossible), offres AFD dont l'examen est reporté ;
+  (téléchargement impossible), appels d'offres sans date limite dont l'avis PDF n'a pas pu être lu, offres AFD dont
+  l'examen est reporté ;
 - réglages de MyBestConsultant indisponibles ou invalides (repli sur la dernière version connue ou sur
   `config/defaults.json`, voir « Réglages »), ou `VEILLE_CONFIG_URL` non défini.
 
@@ -130,7 +133,7 @@ par l'adresse de son site) est écarté.
 
 ## Prérequis
 
-- Node.js 22.12 ou plus (24 recommandé, voir `.nvmrc`) et npm.
+- Node.js 22.13 ou plus (24 recommandé, voir `.nvmrc` ; `pdfjs-dist` l'exige) et npm.
 - Pour la production : le serveur de MyBestConsultant (Docker), le dépôt GitHub et une boîte e-mail avec accès SMTP
   (port 587), d'un domaine de l'organisation.
 
@@ -278,6 +281,7 @@ un passage, `etat.json.lock` empêche un second passage de démarrer. Modifier l
 | Lecture des réglages, repli | `src/settings/` (format : `veille-settings.ts`, même format que MyBestConsultant) |
 | E-mail d'une offre (boîte AO) | `src/digest/offer-email.ts` |
 | Avis officiel en PDF joint, lien du dossier de consultation | `src/tenders/notice-pdf.ts` ; adresses : `boampNoticePdfUrl`, `boampDocumentsUrl` (`src/sources/boamp.source.ts`), `tedNoticeToListing` (`src/sources/ted.source.ts`) |
+| Date limite d'un appel d'offres (eForms, avis PDF) | `boampEformsDeadline` (`src/sources/boamp.source.ts`), `src/tenders/notice-deadline.ts`, `prepare` (`src/scan.service.ts`) |
 | Récapitulatif de l'équipe | `src/digest/digest.ts` |
 | Calcul des nouveautés, ordre d'envoi, alertes de volume | `src/state/run-state.ts` |
 | Heures des passages planifiés | `MORNING_RUN`, `DAY_RUNS` de `src/run/veille-scheduler.ts` |
@@ -309,6 +313,7 @@ src/
   tenders/buyer-match.ts  reconnaissance de l'acheteur d'un avis
   tenders/all-buyers.ts   recherche chez tous les acheteurs (mots-clés, classification)
   tenders/notice-pdf.ts   avis officiel en PDF (BOAMP, TED), téléchargé et joint à l'e-mail de l'offre
+  tenders/notice-deadline.ts date limite lue dans le texte de l'avis PDF (dernier recours)
   sources/                une source par fichier (BOAMP, TED, Choisir le service public, sites carrières)
   state/                  calcul des nouveautés (règles pures), fichier d'état, son verrou et son historique
   digest/                 e-mail d'une offre, récapitulatif, mise en forme commune

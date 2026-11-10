@@ -104,8 +104,7 @@ export class ScanService {
     const run: RunContext = { sources, organisations, settingsWarnings }
     if (this.config.dryRun) return this.preview(batch, report, today, outOfScope, run)
 
-    const details = new DetailReader(PAGE_FAILURES)
-    const pdfs = new DetailReader(PDF_FAILURES)
+    const readers = newReaders()
     const sent: NewListing[] = []
     const refused: string[] = []
     const sentWithoutPdf: string[] = []
@@ -118,15 +117,14 @@ export class ScanService {
         this.logger.warn(`Budget de temps atteint après ${sent.length} offre(s) : le reste partira au passage suivant.`)
         break
       }
-      const complete = await this.complete(listing, details, sources)
-      // Date limite déjà passée (souvent connue seulement par la page de l'offre) : rien à envoyer. L'offre est
-      // retenue comme traitée, pour ne pas relire sa page à chaque passage.
-      if (complete.deadline && complete.deadline.slice(0, 10) < today) {
+      const prepared = await this.prepare(listing, readers, sources, today)
+      // Date limite déjà passée (souvent connue seulement par la page de l'offre ou l'avis PDF) : rien à envoyer. L'offre
+      // est retenue comme traitée, pour ne pas relire sa page à chaque passage.
+      if (prepared.outdated) {
         outdated.push(listing)
         continue
       }
-      // Avis officiel en PDF, téléchargé seulement pour une offre qui part (pas pour une offre échue).
-      const attachments = await this.attachNoticePdf(listing, pdfs, sources)
+      const { complete, attachments } = prepared
       try {
         try {
           await this.mailer.sendOffer(renderOfferEmail(complete, organisations, attachments))
@@ -176,8 +174,10 @@ export class ScanService {
         ...settingsWarnings,
         ...(saved.warning ? [{ label: "Fichier d'état", message: saved.warning }] : []),
         ...report.warnings,
-        ...details.warnings(),
-        ...pdfs.warnings(),
+        ...readers.details.warnings(),
+        ...readers.pdfs.warnings(),
+        ...readers.pdfDeadlines.warnings(),
+        ...readers.pdfWithoutDeadline.warnings(),
         ...sentWithoutPdf.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Avis PDF refusé avec le message, offre envoyée sans lui : ${offer}` })),
         ...refused.map((offer) => ({ label: "Boîte AO (serveur d'envoi)", message: `Offre refusée, retentée au prochain passage : ${offer}` })),
       ],
@@ -226,10 +226,8 @@ export class ScanService {
     const digest = renderDigest(summary, today, run.organisations)
     let first: RenderedEmail | null = null
     if (batch[0]) {
-      const complete = await this.complete(batch[0], new DetailReader(PAGE_FAILURES), run.sources)
-      // Comme dans un vrai passage, pas de téléchargement pour une offre échue (elle ne partirait pas).
-      const outdated = complete.deadline !== undefined && complete.deadline.slice(0, 10) < today
-      const attachments = outdated ? [] : await this.attachNoticePdf(batch[0], new DetailReader(PDF_FAILURES), run.sources)
+      // Comme dans un vrai passage : pas de téléchargement pour une offre déjà connue comme échue.
+      const { complete, attachments } = await this.prepare(batch[0], newReaders(), run.sources, today)
       first = renderOfferEmail(complete, run.organisations, attachments)
     }
     // Pièces jointes : nom et taille seulement (le contenu d'un avis nomme le contact de l'acheteur).
@@ -242,6 +240,55 @@ export class ScanService {
           : ''),
     )
     return summary
+  }
+
+  /**
+   * Offre prête à partir : complétée par sa page, avec son avis officiel en PDF. Un appel d'offres encore sans date
+   * limite prend celle écrite dans son avis (téléchargé avant de juger s'il est échu, puis joint : un seul
+   * téléchargement). `outdated` : date limite passée, rien à envoyer ; l'avis d'une offre déjà connue comme échue n'est
+   * pas téléchargé.
+   */
+  private async prepare(
+    listing: NewListing,
+    readers: Readers,
+    sources: readonly ListingSource[],
+    today: string,
+  ): Promise<{ complete: Listing; attachments: EmailAttachment[]; outdated: boolean }> {
+    const isOutdated = (offer: Listing) => offer.deadline !== undefined && offer.deadline.slice(0, 10) < today
+    let complete = await this.complete(listing, readers.details, sources)
+    if (isOutdated(complete)) return { complete, attachments: [], outdated: true }
+    const attachments = await this.attachNoticePdf(listing, readers.pdfs, sources)
+    const notice = attachments[0]
+    if (!complete.deadline && notice) {
+      const deadline = await this.noticeDeadline(listing, notice, readers, sources, today)
+      if (deadline) complete = { ...complete, deadline }
+    }
+    return { complete, attachments, outdated: isOutdated(complete) }
+  }
+
+  /**
+   * Date limite écrite dans l'avis PDF (notice-deadline.ts), dernier recours après les données de la source et la page
+   * de l'offre. Un avis illisible, ou sans ligne de date limite reconnue, n'empêche pas l'envoi : l'offre part sans date,
+   * et c'est signalé (un libellé changé au BOAMP ou à TED se verrait ainsi dans le récapitulatif). Le message d'erreur
+   * vient de PDF.js (structure du fichier) : jamais le texte de l'avis, qui nomme le contact de l'acheteur.
+   */
+  private async noticeDeadline(
+    listing: NewListing,
+    notice: EmailAttachment,
+    readers: Readers,
+    sources: readonly ListingSource[],
+    today: string,
+  ): Promise<string | undefined> {
+    const label = sources.find((s) => s.id === listing.sourceId)?.label ?? listing.sourceId
+    try {
+      const deadline = await this.noticePdfs.deadline(notice, today)
+      if (!deadline) readers.pdfWithoutDeadline.failed(label, false)
+      return deadline
+    } catch (error) {
+      this.logger.warn(`${label} : texte de l'avis PDF de l'offre ${listing.id} illisible, date limite non lue — ${message(error)}`)
+      readers.pdfDeadlines.failed(label, false)
+      return undefined
+    }
   }
 
   /** Offre complétée par la page de l'offre, si sa source en a besoin. Un échec n'empêche pas l'envoi, il est signalé. */
@@ -324,6 +371,29 @@ const PDF_FAILURES: FailureMessage = (failed, abandoned) =>
   `${failed} offre(s) envoyée(s) sans l'avis officiel en PDF (téléchargement impossible` +
   `${abandoned ? `, abandonné après ${MAX_CONSECUTIVE_PAGE_FAILURES} échecs de suite` : ''}) : l'adresse des avis a peut-être ` +
   `changé ; le lien de l'avis officiel figure dans chaque e-mail.`
+
+const PDF_DEADLINE_FAILURES: FailureMessage = (failed) =>
+  `${failed} appel(s) d'offres sans date limite dans les données de la source, dont l'avis PDF n'a pas pu être lu : ` +
+  `envoyé(s) sans date limite.`
+
+const PDF_WITHOUT_DEADLINE: FailureMessage = (failed) =>
+  `${failed} appel(s) d'offres envoyé(s) sans date limite : ni les données de la source ni l'avis PDF n'en donnent ` +
+  `(rien à corriger si l'avis n'en a pas ; sinon, le libellé de l'avis a changé : DEADLINE_LINE, notice-deadline.ts).`
+
+/** Suivis des lectures d'un passage : pages d'offres, avis PDF, date limite lue (ou non trouvée) dans l'avis PDF. */
+interface Readers {
+  details: DetailReader
+  pdfs: DetailReader
+  pdfDeadlines: DetailReader
+  pdfWithoutDeadline: DetailReader
+}
+
+const newReaders = (): Readers => ({
+  details: new DetailReader(PAGE_FAILURES),
+  pdfs: new DetailReader(PDF_FAILURES),
+  pdfDeadlines: new DetailReader(PDF_DEADLINE_FAILURES),
+  pdfWithoutDeadline: new DetailReader(PDF_WITHOUT_DEADLINE),
+})
 
 /**
  * Suivi des lectures faites pendant l'envoi (pages d'offres, avis PDF), par source. Après quelques échecs de suite (site

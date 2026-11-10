@@ -12,6 +12,8 @@ import {
   boampMainCpv,
   boampDescription,
   boampDocumentsUrl,
+  boampCorrectionsWhere,
+  boampEformsDeadline,
   boampNoticePdfUrl,
   boampRecordToListing,
   boampWhere,
@@ -166,6 +168,39 @@ describe('avis du BOAMP', () => {
     })
   })
 
+  it('lit la date limite dans les données eForms d\'un avis européen dont le BOAMP ne remplit pas « datelimitereponse »', () => {
+    const lot = (period: string, endDate: string, endTime?: string) => ({
+      'cac:TenderingProcess': { [period]: { 'cbc:EndDate': endDate, ...(endTime ? { 'cbc:EndTime': endTime } : {}) } },
+    })
+    const donnees = (lots: unknown[]) => ({ EFORMS: { ContractNotice: { 'cac:ProcurementProjectLot': lots } } })
+    // Procédure restreinte : demandes de participation d'abord, offres plus tard ; la plus proche est retenue.
+    const restricted = donnees([
+      lot('cac:ParticipationRequestReceptionPeriod', '2026-12-04+01:00', '12:00:00+01:00'),
+      lot('cac:TenderSubmissionDeadlinePeriod', '2027-01-15+01:00', '16:00:00+01:00'),
+    ])
+    assert.equal(boampEformsDeadline(restricted, '2026-11-01'), '2026-12-04T12:00:00+01:00')
+    assert.equal(boampEformsDeadline(donnees([lot('cac:TenderSubmissionDeadlinePeriod', '2026-12-10Z')]), '2026-11-01'), '2026-12-10')
+    assert.equal(
+      boampEformsDeadline(donnees([lot('cac:ParticipationRequestReceptionPeriod', '2026-08-04+02:00', '12:00:00.000+02:00')]), '2026-11-01'),
+      '2026-08-04T12:00:00+02:00',
+      'heure avec millièmes',
+    )
+    assert.equal(boampEformsDeadline(donnees([{ 'cac:TenderingProcess': {} }]), '2026-11-01'), undefined)
+    assert.equal(boampEformsDeadline({ FNSimple: { initial: {} } }, '2026-11-01'), undefined, 'avis national : rien à lire ici')
+
+    const multiLot = donnees([
+      lot('cac:TenderSubmissionDeadlinePeriod', '2026-11-01+01:00', '12:00:00+01:00'),
+      lot('cac:TenderSubmissionDeadlinePeriod', '2026-12-01+01:00', '12:00:00+01:00'),
+    ])
+    assert.equal(boampEformsDeadline(multiLot, '2026-11-10'), '2026-12-01T12:00:00+01:00', 'un lot encore ouvert : l\'avis n\'est pas échu')
+    assert.equal(boampEformsDeadline(multiLot, '2026-12-05'), '2026-12-01T12:00:00+01:00', 'tous les lots clos')
+
+    const listing = boampRecordToListing(record({ datelimitereponse: null, nomacheteur: 'Acheteur fictif', donnees: JSON.stringify(restricted) }), [], { allBuyers: true, today: '2026-11-01' })
+    assert.equal(listing?.deadline, '2026-12-04T12:00:00+01:00')
+    const given = boampRecordToListing(record({ nomacheteur: 'Acheteur fictif', donnees: JSON.stringify(restricted) }), [], { allBuyers: true })
+    assert.equal(given?.deadline, '2026-11-19T11:00:00+00:00', 'le champ du BOAMP, quand il est rempli, l\'emporte')
+  })
+
   it('joint l\'avis officiel en PDF, à l\'adresse que donne boamp.fr (année et mois de parution)', () => {
     assert.equal(boampNoticePdfUrl(record({ dateparution: '2026-09-30' })), 'https://www.boamp.fr/telechargements/FILES/PDF/2026/09/26-000001.pdf')
     assert.equal(boampNoticePdfUrl(record({ dateparution: null })), undefined, 'sans date de parution, pas d\'adresse inventée')
@@ -236,14 +271,21 @@ describe('BOAMP : recherche chez tous les acheteurs', () => {
         initial: { description: { objet: 'Objet détaillé fictif.' }, natureMarche: { codeCPV: { objetPrincipal: { classPrincipale: mainCpv } } } },
       },
     })
-  /** Faux BOAMP : avis légers selon la requête, avis complets pour `idweb IN`. */
-  const fakeHttp = (answer: (where: string, light: boolean) => BoampRecord[], full: Map<string, BoampRecord>, fullRequests: string[] = []) =>
+  /** Faux BOAMP : avis légers selon la requête, avis complets pour `idweb IN`, rectificatifs (`corrections`). */
+  const fakeHttp = (
+    answer: (where: string, light: boolean) => BoampRecord[],
+    full: Map<string, BoampRecord>,
+    fullRequests: string[] = [],
+    corrections: BoampRecord[] = [],
+  ) =>
     ({
       json: async (url: string, schema: { parse(value: unknown): unknown }) => {
         const params = new URL(url).searchParams
         const where = params.get('where') ?? ''
         let results: BoampRecord[]
-        if (where.startsWith('idweb IN')) {
+        if (where.startsWith('etat="RECTIFICATIF"')) {
+          results = corrections.filter((c) => (c.annonce_lie ?? []).some((id) => where.includes(`annonce_lie="${id}"`)))
+        } else if (where.startsWith('idweb IN')) {
           fullRequests.push(where)
           results = [...full.values()].filter((record) => where.includes(`"${record.idweb}"`))
         } else results = answer(where, params.has('select'))
@@ -280,6 +322,23 @@ describe('BOAMP : recherche chez tous les acheteurs', () => {
     assert.equal(other?.description, 'Objet détaillé fictif.')
     assert.equal(other?.mainCpv, '72000000')
     assert.deepEqual(batch.ignoredIds, [])
+  })
+
+  it('prend la date limite du dernier rectificatif : un avis prolongé n\'est pas écarté comme échu', async () => {
+    const period = (date: string) =>
+      JSON.stringify({
+        EFORMS: { ContractNotice: { 'cac:ProcurementProjectLot': { 'cac:TenderingProcess': { 'cac:ParticipationRequestReceptionPeriod': { 'cbc:EndDate': `${date}+02:00`, 'cbc:EndTime': '12:00:00+02:00' } } } } },
+      })
+    const initial = record({ idweb: '26-000030', objet: 'Gouvernance des données fictive', nomacheteur: 'Commune fictive', datelimitereponse: null })
+    const full = new Map([['26-000030', { ...initial, donnees: period('2026-10-01') }]])
+    // Du plus récent au plus ancien, comme le BOAMP les renvoie (order_by dateparution desc).
+    const corrections = [
+      record({ idweb: '26-000032', datelimitereponse: null, annonce_lie: ['26-000030', '26-000031'], donnees: period('2026-11-15') }),
+      record({ idweb: '26-000031', datelimitereponse: null, annonce_lie: ['26-000030'], donnees: period('2026-10-25') }),
+    ]
+    const batch = await fetchWith(fakeHttp(() => [initial], full, [], corrections))
+    assert.equal(batch.listings[0]?.deadline, '2026-11-15T12:00:00+02:00', 'date du rectificatif le plus récent, pas celle de l\'avis initial (passée)')
+    assert.equal(boampCorrectionsWhere(['26-000030', '26-000040']), 'etat="RECTIFICATIF" AND (annonce_lie="26-000030" OR annonce_lie="26-000040")')
   })
 
   it('juge l\'avis complet sur son code CPV principal', async () => {

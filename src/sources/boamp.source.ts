@@ -4,7 +4,7 @@
 // acheteurs (titulaire, comptable, instance de recours).
 
 import { z } from 'zod'
-import { addDays, parisDay } from '../dates.js'
+import { addDays, parisDay, pickDeadline } from '../dates.js'
 import type { HttpClient } from '../http/http-client.js'
 import { mentionsTenderKeyword } from '../it-scope.js'
 import type { Listing, ListingSource, SourceBatch, SourceContext } from '../listing.js'
@@ -55,6 +55,8 @@ const recordSchema = z.object({
   code_departement: z.array(z.string()).nullish(),
   descripteur_libelle: z.array(z.string()).nullish(),
   donnees: z.string().nullish(),
+  /** Avis auxquels se rattache celui-ci (avis initial et rectificatifs précédents, pour un rectificatif). */
+  annonce_lie: z.array(z.string()).nullish(),
 })
 const pageSchema = z.object({ total_count: z.number().int(), results: z.array(recordSchema) })
 
@@ -306,6 +308,76 @@ export function boampDocumentsUrl(donnees: Json): string | undefined {
   return candidates.map((candidate) => webUrl(text(candidate))).find((url) => url !== undefined)
 }
 
+/** Périodes eForms qui portent une date limite : candidatures (procédure restreinte, négociée) et offres. */
+const DEADLINE_PERIODS = new Set(['cac:ParticipationRequestReceptionPeriod', 'cac:TenderSubmissionDeadlinePeriod'])
+
+/**
+ * Date limite d'un avis européen (eForms), pour ceux dont le BOAMP laisse `datelimitereponse` vide : 7 avis envoyés sans
+ * date en octobre 2026, dont 5 déjà clos (procédures restreintes : seule la date des demandes de participation est
+ * écrite). Parmi les périodes de l'avis et de ses lots, celle que retient `pickDeadline` au jour `today`, au format de
+ * `Listing.deadline` (date-heure avec le fuseau de l'avis, ou date seule). undefined pour un avis national ou sans période.
+ */
+export function boampEformsDeadline(donnees: Json, today: string): string | undefined {
+  const eforms = child(donnees, 'EFORMS')
+  if (!eforms || typeof eforms !== 'object') return undefined
+  const found: string[] = []
+  // Parcours de tout l'avis : ces périodes sont dans chaque lot (relevé du 10/11/2026), parfois dans la procédure.
+  const walk = (value: Json, depth: number) => {
+    if (depth > 12 || !value || typeof value !== 'object') return
+    for (const [key, nested] of Object.entries(value as Record<string, Json>)) {
+      if (DEADLINE_PERIODS.has(key)) for (const period of list(nested)) collect(period)
+      else for (const item of list(nested)) walk(item, depth + 1)
+    }
+  }
+  const collect = (period: Json) => {
+    // « 2026-10-27+01:00 » et « 12:00:00+01:00 » : jour, heure et fuseau écrits séparément.
+    const date = /^(\d{4}-\d{2}-\d{2})(Z|[+-]\d{2}:\d{2})?$/.exec(text(child(period, 'cbc:EndDate'))?.trim() ?? '')
+    if (!date?.[1]) return
+    // Heure parfois écrite avec des millièmes (« 12:00:00.000+02:00 »), ignorés.
+    const time = /^(\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?$/.exec(text(child(period, 'cbc:EndTime'))?.trim() ?? '')
+    const value = time?.[1] ? `${date[1]}T${time[1].length === 5 ? `${time[1]}:00` : time[1]}${time[2] ?? date[2] ?? ''}` : date[1]
+    found.push(value)
+  }
+  walk(eforms, 0)
+  return pickDeadline(found, today)
+}
+
+/**
+ * Date limite d'un avis au jour `today` : celle de son dernier avis rectificatif s'il en donne une (un rectificatif peut
+ * la repousser : avis réel de juillet 2026, 31/07 → 31/08 → 07/09), sinon `datelimitereponse`, sinon ses données
+ * eForms. Sans le rectificatif, un avis prolongé serait écarté comme échu, définitivement.
+ */
+export function boampDeadline(record: BoampRecord, today: string, correction?: BoampRecord): string | undefined {
+  const fromCorrection = correction && (correction.datelimitereponse ?? boampEformsDeadline(parseDonnees(correction) ?? {}, today))
+  return fromCorrection || (record.datelimitereponse ?? boampEformsDeadline(parseDonnees(record) ?? {}, today))
+}
+
+/** Requête des avis rectificatifs rattachés à ces avis (`annonce_lie`), identifiants du BOAMP seulement. */
+export function boampCorrectionsWhere(ids: readonly string[]): string {
+  return `etat="RECTIFICATIF" AND (${ids.map((id) => `annonce_lie="${id}"`).join(' OR ')})`
+}
+
+/** Garde-fou : quelques rectificatifs par avis au plus (trois pour l'avis de juillet 2026 cité plus haut). */
+const MAX_CORRECTION_PAGES = 5
+
+/**
+ * Dernier avis rectificatif de chacun de ces avis, par lots d'identifiants ; un avis sans rectificatif est absent. Lève
+ * une erreur si le BOAMP ne répond pas : la source échoue (signalée), ses avis restent nouveaux pour le passage suivant,
+ * plutôt que d'en écarter un à tort comme échu.
+ */
+async function latestCorrections(http: HttpClient, ids: string[]): Promise<Map<string, BoampRecord>> {
+  const latest = new Map<string, BoampRecord>()
+  const safe = [...new Set(ids)].filter((id) => /^[\w-]+$/.test(id))
+  for (let start = 0; start < safe.length; start += FULL_RECORDS_CHUNK) {
+    const chunk = safe.slice(start, start + FULL_RECORDS_CHUNK)
+    // Du plus récent au plus ancien (ordre de boampRecords) : le premier rectificatif vu pour un avis est le dernier paru.
+    for (const correction of await boampRecords(http, boampCorrectionsWhere(chunk), MAX_CORRECTION_PAGES)) {
+      for (const id of correction.annonce_lie ?? []) if (chunk.includes(id) && !latest.has(id)) latest.set(id, correction)
+    }
+  }
+  return latest
+}
+
 /** Au-delà, le lieu d'exécution est coupé. */
 const MAX_LOCATION_CHARS = 200
 
@@ -327,7 +399,7 @@ function shortLocation(location: string | undefined): string | undefined {
 export function boampRecordToListing(
   record: BoampRecord,
   organisations: readonly Organisation[] = ORGANISATIONS,
-  options: { allBuyers?: boolean } = {},
+  options: { allBuyers?: boolean; today?: string; correction?: BoampRecord } = {},
 ): Listing | null {
   const { buyers } = boampBuyers(record)
   const followed = matchOrganisation({ buyers, text: `${record.objet ?? ''} ${record.donnees ?? ''}` }, organisations)
@@ -351,7 +423,9 @@ export function boampRecordToListing(
     title: record.objet?.trim() || '(objet non précisé)',
     url: record.url_avis ?? `https://www.boamp.fr/pages/avis/?q=idweb:${encodeURIComponent(record.idweb)}`,
     publishedOn: record.dateparution ?? undefined,
-    deadline: record.datelimitereponse ?? undefined,
+    // Avis européen sans date au BOAMP : celle de ses données eForms. Une offre échue n'est alors pas envoyée
+    // (scan.service.ts) ; sans date du tout, l'avis officiel en PDF est lu en dernier recours (notice-deadline.ts).
+    deadline: boampDeadline(record, options.today ?? '', options.correction),
     details: [
       'BOAMP',
       ...(buyer ? [`Acheteur : ${buyer}`] : []),
@@ -397,11 +471,15 @@ export class BoampSource implements ListingSource {
     private readonly organisations: readonly Organisation[],
   ) {}
 
-  async fetch(): Promise<SourceBatch> {
+  async fetch(context: SourceContext): Promise<SourceBatch> {
     const today = parisDay(this.now())
     const where = boampWhere(addDays(today, -PUBLICATION_LOOKBACK_DAYS), today, this.organisations)
     const records = await boampRecords(this.http, where, MAX_PAGES)
-    const listings = records.map((record) => boampRecordToListing(record, this.organisations)).filter((l): l is Listing => l !== null)
+    // Rectificatifs des seuls avis encore inconnus : les autres sont déjà envoyés ou écartés.
+    const corrections = await latestCorrections(this.http, records.map((record) => record.idweb).filter((id) => !context.isKnown(id)))
+    const listings = records
+      .map((record) => boampRecordToListing(record, this.organisations, { today, correction: corrections.get(record.idweb) }))
+      .filter((l): l is Listing => l !== null)
     const unreadable = records.filter((record) => boampBuyers(record).unreadable).map((record) => record.idweb)
     const warnings = unreadable.length
       ? [`${unreadable.length} avis au contenu illisible (${unreadable.slice(0, 5).join(', ')}) : reconnus par le seul nom d'acheteur, le format a peut-être changé.`]
@@ -447,17 +525,19 @@ export class BoampAllBuyersSource implements ListingSource {
       }
     }
     // Un avis n'est gardé qu'avec un mot-clé dans son intitulé : seuls ceux-là sont relus en entier (code CPV principal).
-    const candidates = [...light.values()].filter((record) => this.otherBuyerListing(record) !== null && mentionsTenderKeyword(record.objet ?? '', this.search.rules))
-    const full = await this.fullRecords(candidates.map((record) => record.idweb).filter((id) => !context.isKnown(id)))
+    const candidates = [...light.values()].filter((record) => this.otherBuyerListing(record, today) !== null && mentionsTenderKeyword(record.objet ?? '', this.search.rules))
+    const unknown = candidates.map((record) => record.idweb).filter((id) => !context.isKnown(id))
+    const full = await this.fullRecords(unknown)
+    const corrections = await latestCorrections(this.http, unknown)
     const listings = candidates
-      .map((record) => this.otherBuyerListing(full.get(record.idweb) ?? record))
+      .map((record) => this.otherBuyerListing(full.get(record.idweb) ?? record, today, corrections.get(record.idweb)))
       .filter((l): l is Listing => l !== null)
     return { listings, ignoredIds: [] }
   }
 
   /** Annonce d'un avis d'un acheteur non suivi, ou null pour un avis d'organisme suivi (lu par la source BOAMP). */
-  private otherBuyerListing(record: BoampRecord): Listing | null {
-    const listing = boampRecordToListing(record, this.organisations, { allBuyers: true })
+  private otherBuyerListing(record: BoampRecord, today: string, correction?: BoampRecord): Listing | null {
+    const listing = boampRecordToListing(record, this.organisations, { allBuyers: true, today, correction })
     return listing?.organisationId === OTHER_BUYERS_ID ? listing : null
   }
 
