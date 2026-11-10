@@ -17,6 +17,8 @@ import { SOURCE_FACTORY } from './sources/sources.js'
 import { EMPTY_STATE, type VeilleState } from './state/run-state.js'
 import { StateStore } from './state/state-store.js'
 import { NoticePdfReader } from './tenders/notice-pdf.js'
+import type { RunReportPayload } from './run/source-report.js'
+import { SourceReportSender } from './run/source-report-sender.js'
 
 Logger.overrideLogger(false)
 
@@ -59,6 +61,8 @@ interface Options {
   readPdf?: (url: string, reference: string) => Promise<EmailAttachment>
   /** Date limite lue dans le texte de l'avis PDF (par défaut : l'avis n'en donne pas). */
   pdfDeadline?: (pdf: EmailAttachment) => Promise<string | undefined>
+  /** Envoi du rapport du passage à MyBestConsultant (par défaut : accepté). */
+  sendReport?: (report: RunReportPayload) => Promise<boolean>
 }
 
 async function scanWith(options: Options) {
@@ -70,13 +74,17 @@ async function scanWith(options: Options) {
   const pdfRequests: string[] = []
   /** Avis PDF dont le texte a été lu pour y chercher la date limite. */
   const pdfDeadlineReads: string[] = []
+  /** Rapports de passage transmis, et source de chaque e-mail d'offre (en-tête X-Wise-Veille-Source). */
+  const reports: RunReportPayload[] = []
+  const offerSources: string[] = []
   const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null, settings: null, aoSync: null }
   const settingsLoader = {
     load: async (snapshot: VeilleState['settings']): Promise<ChosenSettings> => ({ settings: DEFAULT_SETTINGS, origin: 'defaults', warning: null, snapshot, ...options.settings }),
   }
   const mailer = {
-    sendOffer: async (email: RenderedEmail) => {
+    sendOffer: async (email: RenderedEmail, sourceId: string) => {
       calls.push('offre')
+      offerSources.push(sourceId)
       await options.sendOffer?.(email)
       offers.push(email)
     },
@@ -99,6 +107,15 @@ async function scanWith(options: Options) {
       },
       { provide: Mailer, useValue: mailer },
       {
+        provide: SourceReportSender,
+        useValue: {
+          send: async (report: RunReportPayload) => {
+            reports.push(report)
+            return options.sendReport ? options.sendReport(report) : true
+          },
+        },
+      },
+      {
         provide: NoticePdfReader,
         useValue: {
           read: async (url: string, reference: string) => {
@@ -114,7 +131,7 @@ async function scanWith(options: Options) {
       },
     ],
   }).compile()
-  return { scan: module.get(ScanService), calls, offers, digests, saved, pdfRequests, pdfDeadlineReads }
+  return { scan: module.get(ScanService), calls, offers, digests, saved, pdfRequests, pdfDeadlineReads, reports, offerSources }
 }
 
 const seenIds = (state: VeilleState | undefined, sourceId: string) => Object.keys(state?.sources[sourceId]?.seen ?? {}).sort()
@@ -456,8 +473,61 @@ describe('passage de la veille', () => {
   })
 
   it('en essai, n\'envoie rien et ne retient rien', async () => {
-    const { scan, calls } = await scanWith({ sources: [source('a', [offer('A2')])], dryRun: true })
+    const { scan, calls, reports } = await scanWith({ sources: [source('a', [offer('A2')])], dryRun: true })
     await scan.run()
     assert.deepEqual(calls, [])
+    assert.equal(reports.length, 0, 'aucun rapport de passage en essai')
+  })
+})
+
+describe('suivi des sources dans MyBestConsultant', () => {
+  it('donne la source de chaque offre envoyée (en-tête X-Wise-Veille-Source)', async () => {
+    const { scan, offerSources } = await scanWith({ sources: [source('a', [offer('A2')]), source('b', [offer('B1')])] })
+    await scan.run()
+    assert.deepEqual(offerSources, ['a', 'b'])
+  })
+
+  it('transmet après l\'enregistrement de l\'état un rapport par source : lues, écartées, nouvelles, envoyées, échues, erreur', async () => {
+    const describe = async (listing: Listing) => ({ deadline: listing.id === 'A3' ? '2026-10-21' : '2026-11-30' })
+    const { scan, reports, calls } = await scanWith({
+      sources: [
+        source('a', [offer('A1'), offer('A2'), offer('A3'), offer('A4', { title: 'Juriste fictif A4' })], { describe }),
+        source('b', new Error('HTTP 503 sur https://exemple.test/flux')),
+      ],
+      settings: { origin: 'remote', snapshot: { version: 7, savedAt: '2026-10-21T10:00:00.000Z', value: {} } },
+    })
+    await scan.run()
+    assert.equal(calls.indexOf('état') < calls.indexOf('récapitulatif'), true)
+    assert.equal(reports.length, 1)
+    const report = reports[0]
+    assert.equal(report?.startedAt, '2026-10-22T05:00:00.000Z')
+    assert.deepEqual(report?.settings, { origin: 'remote', version: 7 })
+    assert.deepEqual(report?.sources[0], {
+      id: 'a', label: 'Source a', kind: 'job', ok: true, error: null,
+      listed: 3, outOfScope: 1, new: 2, sent: 1, outdated: 1, pending: 0, warnings: [],
+    })
+    assert.deepEqual(report?.sources[1], {
+      id: 'b', label: 'Source b', kind: 'job', ok: false, error: 'HTTP 503 sur https://exemple.test/flux',
+      listed: 0, outOfScope: 0, new: 0, sent: 0, outdated: 0, pending: 0, warnings: [],
+    })
+  })
+
+  it('compte en attente les offres non envoyées au-delà du plafond', async () => {
+    const { scan, reports } = await scanWith({ sources: [source('a', [offer('A2'), offer('A3'), offer('A4')])], maxOfferEmailsPerRun: 1 })
+    await scan.run()
+    assert.equal(reports[0]?.sources[0]?.sent, 1)
+    assert.equal(reports[0]?.sources[0]?.pending, 2)
+  })
+
+  it('un rapport non transmis ne fait pas échouer le passage : il est signalé dans le récapitulatif', async () => {
+    const { scan, digests, saved } = await scanWith({
+      sources: [source('a', [offer('A2')])],
+      digestMode: 'problems',
+      sendReport: async () => { throw new Error('HTTP 404 sur https://exemple.test/api/veille/runs') },
+    })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['A2'])
+    assert.equal(saved.length, 1)
+    assert.match(digests[0]?.text ?? '', /Suivi des sources \(MyBestConsultant\) : Rapport du passage non transmis : HTTP 404/)
   })
 })
