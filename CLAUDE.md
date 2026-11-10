@@ -4,7 +4,8 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
 
 ## Pile et commandes
 
-- NestJS 12 (ESM uniquement) en **contexte d'application autonome**, sans serveur HTTP. TypeScript 6, Node 22.12+.
+- NestJS 12 (ESM uniquement) en **contexte d'application autonome**, sans serveur HTTP. TypeScript 6, Node 22.13+
+  (`pdfjs-dist`).
 - Imports relatifs **avec l'extension `.js`** (ESM `nodenext`), `import type` pour les types (`verbatimModuleSyntax`).
 - `npm run typecheck`, `npm test` (compile par `tsc` dans `dist-test/` puis `node --test`), `npm run build`,
   `npm run veille:essai` (lecture réelle des sources, sans envoi ni enregistrement : la vérification de bout en bout).
@@ -21,12 +22,18 @@ Lire d'abord le [README](README.md) et les ADR de `docs/adr/`.
 - **Données fictives uniquement** dans les tests et aperçus (titres, identifiants, noms).
 - Les avis de marché contiennent des **contacts nominatifs** : ne lire que le nom et le SIRET de l'acheteur, ne jamais
   les journaliser ni les écrire dans un e-mail. Seule exception (ADR 0009, accord de l'utilisateur) : l'avis officiel en
-  PDF, joint tel quel à l'e-mail de la boîte AO, sans que son contenu soit lu ni journalisé.
+  PDF, joint tel quel à l'e-mail de la boîte AO ; son texte n'est lu, en mémoire, que pour la ligne de date limite d'un
+  appel d'offres qui n'en a pas (ADR 0011, `src/tenders/notice-deadline.ts`), rien d'autre gardé ni journalisé.
 - **Avis officiel en PDF** (ADR 0009, `src/tenders/notice-pdf.ts`) : téléchargé seulement depuis `www.boamp.fr` et
   `ted.europa.eu` (https, redirections comprises), à une adresse construite à partir de l'identifiant de l'avis ; un
   échec n'empêche pas l'envoi (signalé), et un message refusé avec son PDF est renvoyé aussitôt sans lui. Le dossier de
   consultation (DCE) des plateformes d'acheteurs n'est **jamais téléchargé** (connexion, conditions d'usage) : seul son
   lien est donné dans l'e-mail, filtré par `webUrl` (lien saisi par un tiers).
+- **Date limite d'un appel d'offres** (ADR 0011) : celle du dernier avis rectificatif s'il en donne une (il peut la
+  repousser), sinon `datelimitereponse` du BOAMP, sinon les périodes eForms de l'avis (`boampDeadline`,
+  `boampEformsDeadline`), la plus proche encore à venir (`pickDeadline` : jamais un avis écarté pour un lot clos), sinon la ligne « Date limite de réception des offres / demandes de participation » de
+  l'avis PDF, téléchargé alors avant le contrôle des offres échues puis joint (`prepare`, `scan.service.ts`). Si le
+  BOAMP ou TED changent ce libellé, adapter `DEADLINE_LINE` et son test (`notice-deadline.spec.ts`).
 - **Respecter les conditions d'usage des sites** (ADR 0001) : API et flux officiels d'abord ; pages publiques
   seulement si robots.txt les autorise ; User-Agent `veille-marches-emplois` ; jamais se faire passer pour un
   navigateur, contourner un blocage ou lire PLACE / lasecurecrute.fr (interdits sans autorisation écrite).

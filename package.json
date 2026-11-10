@@ -5,7 +5,7 @@
   "description": "Veille quotidienne des appels d'offres et des offres d'emploi de 14 organismes publics, envoyée par e-mail.",
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
@@ -20,10 +20,11 @@
     "@nestjs/core": "12.1.2",
     "@nestjs/schedule": "12.0.2",
     "cheerio": "1.2.0",
-    "nodemailer": "10.0.16",
+    "nodemailer": "10.1.7",
+    "pdfjs-dist": "6.4.299",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@nestjs/testing": "12.1.2",

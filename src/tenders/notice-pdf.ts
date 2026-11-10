@@ -3,12 +3,14 @@
 // de la Commission du 12/12/2011), et leur robots.txt n'interdit pas ces adresses (vérifié le 05/11/2026). Le dossier de
 // consultation (DCE), sur la plateforme de chaque acheteur, n'est jamais téléchargé.
 //
-// L'avis nomme le contact de l'acheteur (nom, téléphone, e-mail) : le PDF est joint tel quel à la boîte AO interne, son
-// contenu n'est ni lu ni journalisé ici.
+// L'avis nomme le contact de l'acheteur (nom, téléphone, e-mail) : le PDF est joint tel quel à la boîte AO interne. Son
+// texte n'est lu que pour une offre sans date limite, et seulement la ligne de date limite (notice-deadline.ts) ; rien
+// d'autre n'en est gardé ni journalisé.
 
 import { Injectable } from '@nestjs/common'
 import type { EmailAttachment } from '../digest/format.js'
 import { HttpClient, OFFER_PAGE_REQUEST } from '../http/http-client.js'
+import { deadlineFromNoticeText, pdfText } from './notice-deadline.js'
 
 const PDF_HOSTS = new Set(['www.boamp.fr', 'ted.europa.eu'])
 /**
@@ -49,5 +51,13 @@ export class NoticePdfReader {
     })
     checkNoticePdf(body)
     return { filename: noticePdfFilename(reference), content: body, contentType: 'application/pdf' }
+  }
+
+  /**
+   * Date limite écrite dans l'avis au jour `today` (format de `Listing.deadline`, règle de `pickDeadline`), ou undefined
+   * s'il n'en donne pas. Lève une erreur pour un PDF illisible.
+   */
+  async deadline(pdf: EmailAttachment, today: string): Promise<string | undefined> {
+    return deadlineFromNoticeText(await pdfText(pdf.content), today)
   }
 }

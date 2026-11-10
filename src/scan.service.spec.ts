@@ -57,6 +57,8 @@ interface Options {
   stateWarning?: string
   /** Téléchargement de l'avis officiel en PDF (par défaut : jamais appelé, aucune offre n'en a). */
   readPdf?: (url: string, reference: string) => Promise<EmailAttachment>
+  /** Date limite lue dans le texte de l'avis PDF (par défaut : l'avis n'en donne pas). */
+  pdfDeadline?: (pdf: EmailAttachment) => Promise<string | undefined>
 }
 
 async function scanWith(options: Options) {
@@ -66,6 +68,8 @@ async function scanWith(options: Options) {
   const saved: VeilleState[] = []
   /** Adresses d'avis PDF demandées : une offre sans adresse, ou échue, ne doit jamais en demander. */
   const pdfRequests: string[] = []
+  /** Avis PDF dont le texte a été lu pour y chercher la date limite. */
+  const pdfDeadlineReads: string[] = []
   const config: AppConfig = { stateFile: 'inutilise.json', dryRun: options.dryRun ?? false, maxOfferEmailsPerRun: options.maxOfferEmailsPerRun ?? 200, digestMode: options.digestMode ?? 'always', mail: null, settings: null, aoSync: null }
   const settingsLoader = {
     load: async (snapshot: VeilleState['settings']): Promise<ChosenSettings> => ({ settings: DEFAULT_SETTINGS, origin: 'defaults', warning: null, snapshot, ...options.settings }),
@@ -102,11 +106,15 @@ async function scanWith(options: Options) {
             if (!options.readPdf) throw new Error('téléchargement non prévu par ce test')
             return options.readPdf(url, reference)
           },
+          deadline: async (pdf: EmailAttachment) => {
+            pdfDeadlineReads.push(pdf.filename)
+            return options.pdfDeadline?.(pdf)
+          },
         },
       },
     ],
   }).compile()
-  return { scan: module.get(ScanService), calls, offers, digests, saved, pdfRequests }
+  return { scan: module.get(ScanService), calls, offers, digests, saved, pdfRequests, pdfDeadlineReads }
 }
 
 const seenIds = (state: VeilleState | undefined, sourceId: string) => Object.keys(state?.sources[sourceId]?.seen ?? {}).sort()
@@ -275,6 +283,87 @@ describe('passage de la veille', () => {
     const trial = await scanWith({ sources: [source('t', [outdated])], dryRun: true })
     await trial.scan.run()
     assert.deepEqual(trial.pdfRequests, [])
+  })
+
+  it('lit la date limite dans l\'avis PDF d\'un appel d\'offres qui n\'en a pas : échu, il ne part pas ; sinon il part avec elle et son avis', async () => {
+    const tender = (id: string) => offer(id, { kind: 'tender', noticePdfUrl: `https://www.boamp.fr/telechargements/FILES/PDF/2026/10/${id}.pdf` })
+    const readPdf = async (_url: string, reference: string): Promise<EmailAttachment> =>
+      ({ filename: `avis-${reference}.pdf`, content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' })
+    const deadlines: Record<string, string> = { 'avis-T1.pdf': '2026-10-20T12:00:00+02:00', 'avis-T2.pdf': '2026-11-30T12:00:00+01:00' }
+    const { scan, offers, pdfRequests, saved } = await scanWith({
+      sources: [source('t', [tender('T1'), tender('T2')], { kind: 'tender' })],
+      readPdf,
+      pdfDeadline: async (pdf) => deadlines[pdf.filename],
+    })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['T2'])
+    assert.equal(summary.outdated, 1, 'T1, close d\'après son avis')
+    assert.equal(pdfRequests.length, 2, 'un seul téléchargement par avis')
+    assert.deepEqual(seenIds(saved[0], 't'), ['T1', 'T2'], 'l\'avis échu est retenu, il ne sera pas relu')
+    assert.match(offers[0]?.text ?? '', /^Date limite de réponse : 30\/11\/2026 à 12:00$/m)
+    assert.deepEqual(offers[0]?.attachments?.map((a) => a.filename), ['avis-T2.pdf'])
+  })
+
+  it('ne lit pas le texte de l\'avis PDF quand la date limite est déjà connue', async () => {
+    const tender = offer('T1', { kind: 'tender', deadline: '2026-11-30', noticePdfUrl: 'https://ted.europa.eu/fr/notice/T1/pdf' })
+    const { scan, offers, pdfDeadlineReads } = await scanWith({
+      sources: [source('t', [tender], { kind: 'tender' })],
+      readPdf: async () => ({ filename: 'avis-T1.pdf', content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }),
+    })
+    await scan.run()
+    assert.deepEqual(pdfDeadlineReads, [])
+    assert.deepEqual(offers[0]?.attachments?.map((a) => a.filename), ['avis-T1.pdf'])
+  })
+
+  it('envoie sans date limite un appel d\'offres dont l\'avis PDF lisible n\'en donne pas, et le signale (libellé changé ?)', async () => {
+    const { scan, offers, digests } = await scanWith({
+      sources: [source('t', [offer('T1', { kind: 'tender', noticePdfUrl: 'https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T1.pdf' })], { kind: 'tender' })],
+      readPdf: async () => ({ filename: 'avis-T1.pdf', content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }),
+      pdfDeadline: async () => undefined,
+    })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['T1'])
+    assert.doesNotMatch(offers[0]?.text ?? '', /Date limite/)
+    assert.match(digests[0]?.text ?? '', /Source t : 1 appel\(s\) d'offres envoyé\(s\) sans date limite : ni les données de la source ni l'avis PDF n'en donnent/)
+  })
+
+  it('envoie un appel d\'offres dont la date limite lue dans l\'avis est le jour même du passage', async () => {
+    const { scan, offers } = await scanWith({
+      sources: [source('t', [offer('T1', { kind: 'tender', noticePdfUrl: 'https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T1.pdf' })], { kind: 'tender' })],
+      readPdf: async () => ({ filename: 'avis-T1.pdf', content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }),
+      pdfDeadline: async () => '2026-10-22T18:00:00+02:00',
+    })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['T1'])
+    assert.equal(summary.outdated, 0)
+    assert.match(offers[0]?.text ?? '', /^Date limite de réponse : 22\/10\/2026 à 18:00$/m)
+  })
+
+  it('en essai, lit aussi la date limite de l\'avis PDF : un avis échu est montré sans être envoyé', async () => {
+    const { scan, offers, pdfDeadlineReads } = await scanWith({
+      sources: [source('t', [offer('T1', { kind: 'tender', noticePdfUrl: 'https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T1.pdf' })], { kind: 'tender' })],
+      readPdf: async () => ({ filename: 'avis-T1.pdf', content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }),
+      pdfDeadline: async () => '2026-10-01',
+      dryRun: true,
+    })
+    await scan.run()
+    assert.deepEqual(pdfDeadlineReads, ['avis-T1.pdf'])
+    assert.equal(offers.length, 0, 'rien n\'est envoyé en essai')
+  })
+
+  it('envoie sans date limite un appel d\'offres dont l\'avis PDF est illisible, et le signale', async () => {
+    const { scan, offers, digests } = await scanWith({
+      sources: [source('t', [offer('T1', { kind: 'tender', noticePdfUrl: 'https://www.boamp.fr/telechargements/FILES/PDF/2026/10/T1.pdf' })], { kind: 'tender' })],
+      readPdf: async () => ({ filename: 'avis-T1.pdf', content: new TextEncoder().encode('%PDF-1.6'), contentType: 'application/pdf' }),
+      pdfDeadline: async () => {
+        throw new Error('Invalid PDF structure.')
+      },
+    })
+    const summary = await scan.run()
+    assert.deepEqual(summary.sent.map((l) => l.id), ['T1'])
+    assert.doesNotMatch(offers[0]?.text ?? '', /Date limite/)
+    assert.deepEqual(offers[0]?.attachments?.map((a) => a.filename), ['avis-T1.pdf'], 'l\'avis reste joint')
+    assert.match(digests[0]?.text ?? '', /Source t : 1 appel\(s\) d'offres sans date limite dans les données de la source, dont l'avis PDF n'a pas pu être lu/)
   })
 
   it('renvoie aussitôt sans l\'avis PDF une offre dont le message est refusé avec lui (sinon refusée à chaque passage)', async () => {

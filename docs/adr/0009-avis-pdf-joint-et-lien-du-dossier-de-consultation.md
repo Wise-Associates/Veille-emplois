@@ -1,6 +1,6 @@
 # 0009 — Avis officiel en PDF joint, lien vers le dossier de consultation
 
-Date : 5 novembre 2026 · Statut : acceptée
+Date : 5 novembre 2026 · Statut : acceptée ; point 5 modifié par l'ADR 0011 (date limite lue dans l'avis PDF)
 
 ## Contexte
 
